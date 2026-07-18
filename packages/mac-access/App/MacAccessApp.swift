@@ -1,8 +1,34 @@
 import AppKit
+import Darwin
 import MacAccessShared
 import SwiftUI
 
 @main
+enum MacAccessEntryPoint {
+    @MainActor
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        guard MacAccessCLI.shouldRun(arguments: arguments) else {
+            MacAccessApp.main()
+            return
+        }
+
+        Task { @MainActor in
+            let execution = await MacAccessCLI.execute(
+                arguments: arguments,
+                client: MacAccessXPCConnectorCoreClient(),
+                readStdin: { FileHandle.standardInput.readDataToEndOfFile() }
+            )
+            let output = execution.writesToStandardError
+                ? FileHandle.standardError
+                : FileHandle.standardOutput
+            output.write(execution.output)
+            Darwin.exit(execution.exitCode)
+        }
+        RunLoop.main.run()
+    }
+}
+
 struct MacAccessApp: App {
     @NSApplicationDelegateAdaptor(MacAccessAppDelegate.self) private var appDelegate
     @StateObject private var controller: MacAccessController

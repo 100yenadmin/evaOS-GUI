@@ -4,6 +4,27 @@
 [#701](https://github.com/100yenadmin/evaOS-GUI/issues/701). It builds and tests without
 `packages/desktop`, Workbench, backend access, Homebrew, or a customer-managed Python runtime.
 
+## Local CLI
+
+The installed app's exact signed main executable also exposes the local operator/automation surface:
+
+```bash
+"/Applications/evaOS Mac Access.app/Contents/MacOS/evaOS Mac Access" status --json
+printf '%s\n' 'ONE-USE-CODE' |
+  "/Applications/evaOS Mac Access.app/Contents/MacOS/evaOS Mac Access" pair --code-stdin --json
+```
+
+It supports status, pairing from stdin, connect/disconnect, access modes, pause/resume, stop,
+revoke, emergency stop, exact pending-approval allow/deny, redacted audit, diagnostics, and version
+output. It dispatches before SwiftUI starts, uses the same `com.evaos.mac-access` code requirement
+and helper/XPC core as the menu UI, and introduces no second daemon, listener, connector, credential
+store, bundle identity, TCC owner, or PATH installation. Pairing codes are rejected in argv and are
+never returned in output.
+
+Remote evaOS VM agents do not use this CLI as a control bypass. They use the broker-selected outbound
+WSS/CUA path; the CLI is for local lifecycle and operator automation. A future MCP adapter may wrap
+this same contract if needed, but v0.1 does not add another MCP daemon.
+
 The issue #702 helper-owned pairing and relay transport slice is now present in source and remains
 fail closed at the application boundary:
 
