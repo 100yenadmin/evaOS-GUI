@@ -190,6 +190,40 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(status?.status.transport, "stopped")
         XCTAssertEqual(status?.status.accessMode, .off)
     }
+
+    func testControllerBackedCLIStopStillAllowsLocalRevoke() async {
+        let core = StatefulCLIClient()
+        let initial = MacAccessState(
+            connection: .connected,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
+            isPaired: true,
+            blocker: nil
+        )
+        let controller = await MainActor.run {
+            MacAccessController(
+                client: core,
+                initialState: initial,
+                availability: .internalAlpha
+            )
+        }
+        let client = MacAccessControllerCLIClient(
+            controller: controller,
+            statusClient: core
+        )
+
+        let stopped = await client.perform(.stop)
+        let revoked = await client.perform(.revokeSelectedVM)
+        let actions = await core.actions
+        XCTAssertEqual(stopped, .completed(.localEmergencyStop))
+        XCTAssertEqual(revoked, .completed(.revoked))
+        XCTAssertEqual(actions, [.stop, .revokeSelectedVM])
+
+        let status = await client.fetchStatus()
+        XCTAssertEqual(status?.status.pairing, "revoked")
+        XCTAssertEqual(status?.status.transport, "stopped")
+        XCTAssertEqual(status?.status.accessMode, .off)
+    }
 }
 
 @MainActor
@@ -203,6 +237,7 @@ private final class SetupInvocationRecorder {
 
 private actor StatefulCLIClient: MacAccessCLIClient {
     private var mode = MacAccessMode.off
+    private var pairing = "paired"
     private var transport = "connected"
     private(set) var actions: [ConnectorCoreAction] = []
 
@@ -224,10 +259,13 @@ private actor StatefulCLIClient: MacAccessCLIClient {
             transport = "disconnected"
             return .completed(.disconnected)
         case .pair:
+            pairing = "paired"
             return .completed(.paired)
         case .unpair:
+            pairing = "unpaired"
             return .completed(.unpaired)
         case .revokeSelectedVM:
+            pairing = "revoked"
             return .completed(.revoked)
         case .pause:
             return .completed(.localPause)
@@ -242,7 +280,7 @@ private actor StatefulCLIClient: MacAccessCLIClient {
         MacAccessXPCReply(
             code: .ok,
             status: MacAccessXPCSafeStatus(
-                pairing: "paired",
+                pairing: pairing,
                 transport: transport,
                 lastErrorCode: transport == "stopped" ? "stopped" : nil,
                 lastAuditID: "redacted-audit-1",

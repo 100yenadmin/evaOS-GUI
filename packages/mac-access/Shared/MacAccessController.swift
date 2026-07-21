@@ -235,6 +235,8 @@ public final class MacAccessController: ObservableObject {
             switch action {
             case .stop, .setAccessMode(.off):
                 break
+            case .revokeSelectedVM where blocker == .emergencyStopActive:
+                break
             case .pair where blocker == .dashboardPairingUnavailable || blocker == .notPaired
                 || blocker == .stalePairing || blocker == .revokedGrant:
                 break
