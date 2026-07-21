@@ -3,7 +3,6 @@ import Foundation
 public enum MacAccessConnectionState: String, CaseIterable, Sendable {
     case disconnected
     case connecting
-    case approvalNeeded
     case connected
     case paused
     case blocked
@@ -11,7 +10,6 @@ public enum MacAccessConnectionState: String, CaseIterable, Sendable {
 
 public enum MacAccessMode: String, CaseIterable, Codable, Sendable {
     case off
-    case askEveryTime
     case fullAccess
 }
 
@@ -111,20 +109,6 @@ public struct MacAccessStateMachine: Sendable {
         state.blocker = blocker
     }
 
-    public mutating func requireApproval() {
-        guard state.blocker == nil else {
-            state.connection = .blocked
-            state.effectiveMode = .off
-            return
-        }
-        guard state.connection == .connecting else {
-            block(.connectorCoreUnavailable)
-            return
-        }
-        state.connection = .approvalNeeded
-        state.effectiveMode = .off
-    }
-
     public mutating func markConnected(at date: Date) {
         guard state.blocker == nil else {
             state.connection = .blocked
@@ -135,7 +119,7 @@ public struct MacAccessStateMachine: Sendable {
             block(.notPaired)
             return
         }
-        guard state.connection == .connecting || state.connection == .approvalNeeded else {
+        guard state.connection == .connecting else {
             block(.connectorCoreUnavailable)
             return
         }

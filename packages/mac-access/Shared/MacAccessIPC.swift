@@ -81,35 +81,6 @@ public struct MacAccessXPCSafeStatus: Codable, Equatable, Sendable {
     }
 }
 
-public struct MacAccessApprovalRequest: Codable, Equatable, Sendable {
-    public let requestID: String
-    public let capability: String
-    public let actionSummary: String
-    public let requestDigestSHA256: String
-
-    public init(
-        requestID: String,
-        capability: String,
-        actionSummary: String,
-        requestDigestSHA256: String
-    ) {
-        self.requestID = requestID
-        self.capability = capability
-        self.actionSummary = actionSummary
-        self.requestDigestSHA256 = requestDigestSHA256
-    }
-}
-
-public struct MacAccessApprovalReply: Codable, Equatable, Sendable {
-    public let requestID: String
-    public let approved: Bool
-
-    public init(requestID: String, approved: Bool) {
-        self.requestID = requestID
-        self.approved = approved
-    }
-}
-
 public struct MacAccessXPCReply: Codable, Equatable, Sendable {
     public let code: MacAccessXPCReplyCode
     public let status: MacAccessXPCSafeStatus
@@ -170,10 +141,6 @@ public struct SystemMacAccessPermissionAuthorizer: Sendable {
     func requestScreenRecording(withReply reply: @escaping @Sendable (Data) -> Void)
 }
 
-@objc public protocol MacAccessXPCApprovalProtocol: Sendable {
-    func requestApproval(_ request: Data, withReply reply: @escaping @Sendable (Data) -> Void)
-}
-
 protocol MacAccessXPCTransport: Sendable {
     func request(_ action: MacAccessXPCAction, code: String?) async throws -> Data
 }
@@ -194,11 +161,6 @@ private final class MacAccessXPCReplyGate: @unchecked Sendable {
 actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     static let maximumReplyBytes = 4 << 10
     private var connection: NSXPCConnection?
-    private let approvalHandler: (any MacAccessXPCApprovalProtocol)?
-
-    init(approvalHandler: (any MacAccessXPCApprovalProtocol)? = nil) {
-        self.approvalHandler = approvalHandler
-    }
 
     func request(_ action: MacAccessXPCAction, code: String?) async throws -> Data {
         let connection = connection ?? makeConnection()
@@ -238,10 +200,6 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     private func makeConnection() -> NSXPCConnection {
         let connection = NSXPCConnection(serviceName: MacAccessIdentity.helperServiceID)
         connection.remoteObjectInterface = NSXPCInterface(with: MacAccessXPCServiceProtocol.self)
-        if let approvalHandler {
-            connection.exportedInterface = NSXPCInterface(with: MacAccessXPCApprovalProtocol.self)
-            connection.exportedObject = approvalHandler
-        }
         connection.setCodeSigningRequirement(MacAccessIdentity.helperDesignatedRequirement)
         let owner = self
         connection.invalidationHandler = {
@@ -262,8 +220,8 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
 public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClient {
     private let transport: any MacAccessXPCTransport
 
-    public init(approvalHandler: (any MacAccessXPCApprovalProtocol)? = nil) {
-        transport = ProductionMacAccessXPCTransport(approvalHandler: approvalHandler)
+    public init() {
+        transport = ProductionMacAccessXPCTransport()
     }
 
     init(transport: any MacAccessXPCTransport) {

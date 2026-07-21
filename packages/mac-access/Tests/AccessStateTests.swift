@@ -14,7 +14,7 @@ final class AccessStateTests: XCTestCase {
     func testStateMachineCoversEveryVisibleConnectionState() {
         var state = MacAccessState(
             connection: .disconnected,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: true,
             blocker: nil
@@ -23,8 +23,6 @@ final class AccessStateTests: XCTestCase {
 
         machine.beginConnecting()
         XCTAssertEqual(machine.state.connection, .connecting)
-        machine.requireApproval()
-        XCTAssertEqual(machine.state.connection, .approvalNeeded)
         machine.markConnected(at: Date(timeIntervalSince1970: 1))
         XCTAssertEqual(machine.state.connection, .connected)
         machine.pause()
@@ -104,7 +102,7 @@ final class AccessStateTests: XCTestCase {
         for blocker in blockers {
             let state = MacAccessState(
                 connection: .blocked,
-                configuredMode: .askEveryTime,
+                configuredMode: .fullAccess,
                 effectiveMode: .off,
                 isPaired: true,
                 blocker: blocker
@@ -126,7 +124,7 @@ final class AccessStateTests: XCTestCase {
         for blocker in blockers {
             let state = MacAccessState(
                 connection: .blocked,
-                configuredMode: .askEveryTime,
+                configuredMode: .fullAccess,
                 effectiveMode: .off,
                 isPaired: true,
                 blocker: blocker
@@ -149,7 +147,7 @@ final class AccessStateTests: XCTestCase {
         for blocker in blockers {
             let state = MacAccessState(
                 connection: .blocked,
-                configuredMode: .askEveryTime,
+                configuredMode: .fullAccess,
                 effectiveMode: .off,
                 isPaired: true,
                 blocker: blocker
@@ -168,7 +166,7 @@ final class AccessStateTests: XCTestCase {
     func testConnectedConfirmationRequiresAnActiveConnectionTransition() {
         let state = MacAccessState(
             connection: .disconnected,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: true,
             blocker: nil
@@ -192,7 +190,7 @@ final class AccessStateTests: XCTestCase {
 
         let disconnectedState = MacAccessState(
             connection: .disconnected,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: true,
             blocker: nil

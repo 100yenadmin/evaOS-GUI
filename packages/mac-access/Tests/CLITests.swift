@@ -109,7 +109,6 @@ final class CLITests: XCTestCase {
             (["connect"], .connect),
             (["disconnect"], .disconnect),
             (["mode", "off"], .setAccessMode(.off)),
-            (["mode", "ask"], .setAccessMode(.askEveryTime)),
             (["mode", "full"], .setAccessMode(.fullAccess)),
             (["stop"], .stop),
             (["unpair"], .unpair),
@@ -130,6 +129,8 @@ final class CLITests: XCTestCase {
             XCTAssertFalse(text.contains("relay_credential"))
             XCTAssertFalse(text.contains("pairing_code"))
         }
+
+        XCTAssertNil(MacAccessCLI.parse(arguments: ["mode", "ask"]))
     }
 
     func testPermissionStatusAndRequestsUseHelperOwnedXPCSurface() async {

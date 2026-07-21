@@ -3,39 +3,6 @@ import Darwin
 import MacAccessShared
 import SwiftUI
 
-final class MacAccessApprovalHandler: NSObject, MacAccessXPCApprovalProtocol, @unchecked Sendable {
-    func requestApproval(
-        _ data: Data,
-        withReply reply: @escaping @Sendable (Data) -> Void
-    ) {
-        Task { @MainActor in
-            guard data.count <= 4 << 10,
-                  let request = try? JSONDecoder().decode(MacAccessApprovalRequest.self, from: data)
-            else {
-                reply(Data())
-                return
-            }
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = String(localized: "approval.title")
-            alert.informativeText = [
-                request.actionSummary,
-                request.capability,
-                String(request.requestDigestSHA256.prefix(16)),
-            ].joined(separator: "\n")
-            alert.addButton(withTitle: String(localized: "approval.allowOnce"))
-            alert.addButton(withTitle: String(localized: "approval.deny"))
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            let approved = alert.runModal() == .alertFirstButtonReturn
-            let response = MacAccessApprovalReply(
-                requestID: request.requestID,
-                approved: approved
-            )
-            reply((try? JSONEncoder().encode(response)) ?? Data())
-        }
-    }
-}
-
 @main
 enum MacAccessEntryPoint {
     @MainActor
@@ -77,15 +44,12 @@ enum MacAccessEntryPoint {
 }
 
 struct MacAccessApp: App {
-    private static let approvalHandler = MacAccessApprovalHandler()
     @StateObject private var controller: MacAccessController
     @StateObject private var onboardingWindow: MacAccessOnboardingWindow
     private let localControlServer: MacAccessLocalControlServer
 
     init() {
-        let client = MacAccessXPCConnectorCoreClient(
-            approvalHandler: Self.approvalHandler
-        )
+        let client = MacAccessXPCConnectorCoreClient()
         let controller = MacAccessController(
             client: client,
             availability: .internalAlpha
@@ -135,7 +99,6 @@ extension MacAccessMode {
     var localizationKey: LocalizedStringKey {
         switch self {
         case .off: "mode.off"
-        case .askEveryTime: "mode.askEveryTime"
         case .fullAccess: "mode.fullAccess"
         }
     }
@@ -146,7 +109,6 @@ extension MacAccessConnectionState {
         switch self {
         case .disconnected: "status.disconnected"
         case .connecting: "status.connecting"
-        case .approvalNeeded: "status.approvalNeeded"
         case .connected: "status.connected"
         case .paused: "status.paused"
         case .blocked: "status.blocked"
@@ -157,7 +119,6 @@ extension MacAccessConnectionState {
         switch self {
         case .disconnected: "bolt.slash.fill"
         case .connecting: "arrow.triangle.2.circlepath"
-        case .approvalNeeded: "hand.raised.fill"
         case .connected: "checkmark.shield.fill"
         case .paused: "pause.circle.fill"
         case .blocked: "exclamationmark.shield.fill"

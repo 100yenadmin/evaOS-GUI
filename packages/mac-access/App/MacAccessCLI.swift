@@ -72,7 +72,7 @@ final class MacAccessControllerCLIClient: MacAccessCLIClient, @unchecked Sendabl
 
 enum MacAccessCLICommand: Equatable {
     case status, permissionStatus, requestAccessibility, requestScreenRecording
-    case setup, pair, connect, disconnect, stop, unpair, revoke, modeOff, modeAsk, modeFull, help
+    case setup, pair, connect, disconnect, stop, unpair, revoke, modeOff, modeFull, help
 
     var name: String {
         switch self {
@@ -88,7 +88,6 @@ enum MacAccessCLICommand: Equatable {
         case .revoke: "revoke"
         case .unpair: "unpair"
         case .modeOff: "mode_off"
-        case .modeAsk: "mode_ask_every_time"
         case .modeFull: "mode_full_access"
         case .help: "help"
         }
@@ -132,7 +131,6 @@ enum MacAccessCLI {
       connect
       disconnect
       mode off
-      mode ask
       mode full
       stop
       unpair
@@ -160,7 +158,6 @@ enum MacAccessCLI {
         case ["connect"]: return .connect
         case ["disconnect"]: return .disconnect
         case ["mode", "off"]: return .modeOff
-        case ["mode", "ask"]: return .modeAsk
         case ["mode", "full"]: return .modeFull
         case ["stop"]: return .stop
         case ["unpair"]: return .unpair
@@ -249,7 +246,6 @@ enum MacAccessCLI {
         case .unpair: action = .unpair
         case .revoke: action = .revokeSelectedVM
         case .modeOff: action = .setAccessMode(.off)
-        case .modeAsk: action = .setAccessMode(.askEveryTime)
         case .modeFull: action = .setAccessMode(.fullAccess)
         case .setup, .status, .permissionStatus, .requestAccessibility,
              .requestScreenRecording, .help:

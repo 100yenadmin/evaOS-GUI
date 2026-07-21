@@ -42,8 +42,6 @@ struct MacAccessMenu: View {
 
         Menu("action.accessMode") {
             accessModeButton(.off)
-            accessModeButton(.askEveryTime)
-                .disabled(!controller.canUseElevatedAccessModes)
             accessModeButton(.fullAccess)
                 .disabled(!controller.canUseElevatedAccessModes)
         }

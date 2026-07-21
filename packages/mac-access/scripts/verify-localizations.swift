@@ -6,7 +6,7 @@ private let expectedLocales = Set([
 ])
 private let sourceLocale = "en-US"
 private let keyPattern = try! NSRegularExpression(
-    pattern: #"\"((?:action|activity|approval|blocker|mode|onboarding|permission|status)\.[A-Za-z0-9]+)\""#
+    pattern: #"\"((?:action|activity|blocker|mode|onboarding|permission|status)\.[A-Za-z0-9]+)\""#
 )
 
 func fail(_ message: String) -> Never {

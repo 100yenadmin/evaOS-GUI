@@ -34,66 +34,6 @@ actor MacAccessXPCTransactionActivity: MacAccessRelayActivity {
     }
 }
 
-private final class MacAccessApprovalReplyGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var resolved = false
-
-    func resolve(_ operation: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !resolved else { return }
-        resolved = true
-        operation()
-    }
-}
-
-fileprivate final class MacAccessXPCApprovalProxy: @unchecked Sendable {
-    let id = UUID()
-    private let proxy: any MacAccessXPCApprovalProtocol
-
-    init(proxy: any MacAccessXPCApprovalProtocol) {
-        self.proxy = proxy
-    }
-
-    func requestApproval(_ request: MacAccessApprovalRequest) async -> Bool {
-        guard let encoded = try? JSONEncoder().encode(request), encoded.count <= 4 << 10 else {
-            return false
-        }
-        return await withCheckedContinuation { continuation in
-            let gate = MacAccessApprovalReplyGate()
-            proxy.requestApproval(encoded) { data in
-                gate.resolve {
-                    let reply = try? JSONDecoder().decode(MacAccessApprovalReply.self, from: data)
-                    continuation.resume(
-                        returning: reply?.requestID == request.requestID && reply?.approved == true
-                    )
-                }
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
-                gate.resolve { continuation.resume(returning: false) }
-            }
-        }
-    }
-}
-
-actor MacAccessApprovalBroker: MacAccessApprovalRequesting {
-    private var provider: MacAccessXPCApprovalProxy?
-
-    fileprivate func install(_ provider: MacAccessXPCApprovalProxy) {
-        self.provider = provider
-    }
-
-    fileprivate func clear(providerID: UUID) {
-        guard provider?.id == providerID else { return }
-        provider = nil
-    }
-
-    func requestApproval(_ request: MacAccessApprovalRequest) async -> Bool {
-        guard let provider else { return false }
-        return await provider.requestApproval(request)
-    }
-}
-
 protocol MacAccessXPCServiceCore: Sendable {
     func status() async -> MacAccessXPCReply
     func pair(code: String) async -> MacAccessXPCReply
@@ -182,8 +122,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         configuration: MacAccessHelperDeploymentConfiguration?,
         vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault(),
         relayActivity: any MacAccessRelayActivity = MacAccessXPCTransactionActivity(),
-        permissionAuthorizer: any MacAccessPermissionAuthorizing = HelperMacAccessPermissionAuthorizer(),
-        approvalRequester: (any MacAccessApprovalRequesting)? = nil
+        permissionAuthorizer: any MacAccessPermissionAuthorizing = HelperMacAccessPermissionAuthorizer()
     ) {
         self.vault = vault
         self.permissionAuthorizer = permissionAuthorizer
@@ -198,8 +137,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             executor: MacAccessBridgeCommandExecutor(),
             pinnedKeys: configuration.pinnedKeys,
             relayURL: configuration.relayURL,
-            relayActivity: relayActivity,
-            policy: MacAccessCommandPolicy(approver: approvalRequester)
+            relayActivity: relayActivity
         )
     }
 
@@ -465,20 +403,15 @@ final class MacAccessXPCService: NSObject, MacAccessXPCServiceProtocol, @uncheck
 
 final class MacAccessXPCListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service: MacAccessXPCService
-    private let approvalBroker: MacAccessApprovalBroker
 
     override init() {
-        let approvalBroker = MacAccessApprovalBroker()
-        self.approvalBroker = approvalBroker
         service = MacAccessXPCService(core: MacAccessRuntimeXPCServiceCore(
-            configuration: MacAccessHelperDeploymentConfiguration.load(),
-            approvalRequester: approvalBroker
+            configuration: MacAccessHelperDeploymentConfiguration.load()
         ))
         super.init()
     }
 
     init(core: any MacAccessXPCServiceCore) {
-        approvalBroker = MacAccessApprovalBroker()
         service = MacAccessXPCService(core: core)
         super.init()
     }
@@ -487,20 +420,6 @@ final class MacAccessXPCListenerDelegate: NSObject, NSXPCListenerDelegate {
         connection.setCodeSigningRequirement(MacAccessXPCCallerPolicy.combinedRequirement)
         connection.exportedInterface = NSXPCInterface(with: MacAccessXPCServiceProtocol.self)
         connection.exportedObject = service
-        connection.remoteObjectInterface = NSXPCInterface(with: MacAccessXPCApprovalProtocol.self)
-        if let remote = connection.remoteObjectProxyWithErrorHandler({ _ in })
-            as? MacAccessXPCApprovalProtocol
-        {
-            let provider = MacAccessXPCApprovalProxy(proxy: remote)
-            let broker = approvalBroker
-            Task { await broker.install(provider) }
-            connection.invalidationHandler = {
-                Task { await broker.clear(providerID: provider.id) }
-            }
-            connection.interruptionHandler = {
-                Task { await broker.clear(providerID: provider.id) }
-            }
-        }
         connection.resume()
         return true
     }

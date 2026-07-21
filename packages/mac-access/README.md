@@ -36,12 +36,12 @@ fail closed at the application boundary:
   helper cleanup fails;
 - quit records cleanup intent and requests an orderly local stop before termination;
 - no application UI authority state is persisted, so relaunch cannot restore `Full Access`;
-- the helper applies literal `Off`, `Ask Every Time`, and `Full Access` policy before execution;
-  `Off` returns a denied receipt without actuation, `Ask Every Time` requires one uncached approval
-  from the running signed app, and `Full Access` permits the four bounded CUA capabilities;
+- the helper applies one coarse local enable switch before execution: `Off` returns a denied receipt
+  without actuation, while `Full Access` executes broker-authorized CUA commands without another
+  local permission or approval prompt;
 - the relay returns bounded redacted receipts with bounded observation/action result payloads; and
-- the installed binary exposes `setup`, status, permissions, pairing, connect/disconnect, literal
-  modes, emergency stop, unpair, and revoke through a same-user local CLI routed through the
+- the installed binary exposes `setup`, status, permissions, pairing, connect/disconnect, the
+  `Off`/`Full Access` enable switch, emergency stop, unpair, and revoke through a same-user local CLI routed through the
   running app controller to its app-owned helper, so separate CLI invocations operate one
   authoritative connector session and cannot bypass the emergency-stop latch.
 

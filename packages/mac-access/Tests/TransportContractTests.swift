@@ -339,20 +339,6 @@ private actor CountingExecutor: MacAccessCommandExecutor {
     }
 }
 
-private actor FixtureApprovalRequester: MacAccessApprovalRequesting {
-    private var responses: [Bool]
-    private(set) var requests: [MacAccessApprovalRequest] = []
-
-    init(responses: [Bool]) {
-        self.responses = responses
-    }
-
-    func requestApproval(_ request: MacAccessApprovalRequest) -> Bool {
-        requests.append(request)
-        return responses.isEmpty ? false : responses.removeFirst()
-    }
-}
-
 private actor FixturePairingRedeemer: MacAccessPairingRedeemer {
     private let bindingID: String
     private let mismatchIdentity: Bool
@@ -464,50 +450,15 @@ private actor RecordingRelayActivity: MacAccessRelayActivity {
 }
 
 final class TransportContractTests: XCTestCase {
-    func testLiteralAccessModesAndAskEveryTimeDoesNotCacheApproval() async {
-        let approver = FixtureApprovalRequester(responses: [true, false])
-        let policy = MacAccessCommandPolicy(approver: approver)
-        let text = "private text is not copied into approval UI"
-        let request: [String: JSONValue] = [
-            "text": .string(text),
-        ]
+    func testOffDeniesAndFullAccessExecutesWithoutAnotherLocalApproval() async {
+        let policy = MacAccessCommandPolicy()
 
-        let offDecision = await policy.authorize(
-            capability: "customer_mac.desktop_type",
-            request: request,
-            requestDigestSHA256: String(repeating: "a", count: 64)
-        )
+        let offDecision = await policy.authorize()
         XCTAssertEqual(offDecision, .deny("access_off"))
 
         await policy.setMode(.fullAccess)
-        let fullDecision = await policy.authorize(
-            capability: "customer_mac.desktop_type",
-            request: request,
-            requestDigestSHA256: String(repeating: "b", count: 64)
-        )
+        let fullDecision = await policy.authorize()
         XCTAssertEqual(fullDecision, .allow)
-
-        await policy.setMode(.askEveryTime)
-        let firstAsk = await policy.authorize(
-            capability: "customer_mac.desktop_type",
-            request: request,
-            requestDigestSHA256: String(repeating: "c", count: 64)
-        )
-        let secondAsk = await policy.authorize(
-            capability: "customer_mac.desktop_type",
-            request: request,
-            requestDigestSHA256: String(repeating: "d", count: 64)
-        )
-        let requests = await approver.requests
-
-        XCTAssertEqual(firstAsk, .allow)
-        XCTAssertEqual(secondAsk, .deny("approval_denied"))
-        XCTAssertEqual(requests.count, 2)
-        XCTAssertNotEqual(requests[0].requestID, requests[1].requestID)
-        XCTAssertEqual(requests[0].actionSummary, "Type \(text.count) characters")
-        XCTAssertFalse(requests[0].actionSummary.contains("private text"))
-        XCTAssertEqual(requests[0].requestDigestSHA256, String(repeating: "c", count: 64))
-        XCTAssertEqual(requests[1].requestDigestSHA256, String(repeating: "d", count: 64))
     }
 
     func testOffReturnsDeniedReceiptWithoutInvokingExecutorOrClosingChannel() async throws {

@@ -249,8 +249,8 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .completed(.localStop))
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -274,8 +274,8 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -301,7 +301,7 @@ final class ControllerTests: XCTestCase {
         let connected = MacAccessState(
             connection: .connected,
             configuredMode: .fullAccess,
-            effectiveMode: .askEveryTime,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -324,8 +324,8 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .completed(.localStop))
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -356,8 +356,8 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .completed(.localPause))
         let inconsistent = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: false,
             blocker: nil
         )
@@ -378,8 +378,8 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -403,8 +403,8 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -432,8 +432,8 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -474,7 +474,7 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let blocked = MacAccessState(
             connection: .blocked,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: true,
             blocker: .permissionDenied
@@ -512,8 +512,8 @@ final class ControllerTests: XCTestCase {
         let client = SuspendedConnectorClient()
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -537,7 +537,7 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .completed(.localPause))
         let blocked = MacAccessState(
             connection: .blocked,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: false,
             blocker: .permissionDenied
@@ -574,8 +574,8 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .completed(.localPause))
         let connected = MacAccessState(
             connection: .connected,
-            configuredMode: .askEveryTime,
-            effectiveMode: .askEveryTime,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
             isPaired: true,
             blocker: nil
         )
@@ -597,7 +597,7 @@ final class ControllerTests: XCTestCase {
         let client = RecordingConnectorClient(result: .blocked(.relayUnavailable))
         let paired = MacAccessState(
             connection: .disconnected,
-            configuredMode: .askEveryTime,
+            configuredMode: .fullAccess,
             effectiveMode: .off,
             isPaired: true,
             blocker: nil
