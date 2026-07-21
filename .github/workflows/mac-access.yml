@@ -1,0 +1,93 @@
+name: Mac Access
+
+on:
+  pull_request:
+    paths:
+      - 'packages/mac-access/**'
+      - '.github/workflows/mac-access.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/mac-access/**'
+      - '.github/workflows/mac-access.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mac-access-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Standalone source and bundle proof
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scripts and frozen connector identities
+        run: |
+          bash -n packages/mac-access/scripts/*.sh
+          packages/mac-access/scripts/verify-contract-identities.sh
+          packages/mac-access/scripts/verify-localizations.sh
+
+      - name: Cold unsigned build
+        id: cold
+        run: |
+          DERIVED_DATA_PATH="$RUNNER_TEMP/MacAccessDerivedData"
+          rm -rf "$DERIVED_DATA_PATH"
+          SECONDS=0
+          xcodebuild \
+            -project packages/mac-access/MacAccess.xcodeproj \
+            -scheme MacAccess \
+            -configuration Debug \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+
+      - name: Warm unsigned build
+        id: warm
+        run: |
+          DERIVED_DATA_PATH="$RUNNER_TEMP/MacAccessDerivedData"
+          SECONDS=0
+          xcodebuild \
+            -project packages/mac-access/MacAccess.xcodeproj \
+            -scheme MacAccess \
+            -configuration Debug \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+
+      - name: Run hostless Swift tests
+        run: |
+          DERIVED_DATA_PATH="$RUNNER_TEMP/MacAccessDerivedData"
+          xcodebuild \
+            -project packages/mac-access/MacAccess.xcodeproj \
+            -scheme MacAccess \
+            -configuration Debug \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+          xcrun xctest "$DERIVED_DATA_PATH/Build/Products/Debug/MacAccessTests.xctest"
+
+      - name: Verify exact nested bundle layout
+        run: |
+          DERIVED_DATA_PATH="$RUNNER_TEMP/MacAccessDerivedData"
+          packages/mac-access/scripts/verify-bundle-layout.sh \
+            "$DERIVED_DATA_PATH/Build/Products/Debug/evaOS Mac Access.app"
+
+      - name: Record advisory build timings
+        run: |
+          {
+            echo '## Mac Access local build timings'
+            echo ''
+            echo '| Build | Seconds | Advisory budget |'
+            echo '| --- | ---: | ---: |'
+            echo '| Cold clean build | ${{ steps.cold.outputs.seconds }} | < 300 |'
+            echo '| Warm incremental build | ${{ steps.warm.outputs.seconds }} | < 120 |'
+            echo ''
+            echo 'These timings are source/local CI evidence, not signing, release, TCC, pairing, or live-runtime proof.'
+          } >> "$GITHUB_STEP_SUMMARY"

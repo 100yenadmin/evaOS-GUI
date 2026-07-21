@@ -1,0 +1,3734 @@
+{
+  "sourceLanguage": "en-US",
+  "strings": {
+    "blocker.permissionDenied": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS permission is denied. Access remains Off."
+          }
+        }
+      }
+    },
+    "blocker.stalePairing": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The saved pairing is stale. Pair again when code redemption is available."
+          }
+        }
+      }
+    },
+    "blocker.revokedGrant": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The selected VM grant was revoked. Access remains Off."
+          }
+        }
+      }
+    },
+    "blocker.offlineBroker": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The broker is offline. Remote access is unavailable."
+          }
+        }
+      }
+    },
+    "blocker.coreCrashed": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "The connector core stopped unexpectedly. Access remains Off."
+          }
+        }
+      }
+    },
+    "blocker.updateRequired": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A compatible update is required before access can resume."
+          }
+        }
+      }
+    },
+    "blocker.conflictingWorkbenchOwner": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "A conflicting Workbench connector owner was detected. No takeover was attempted."
+          }
+        }
+      }
+    },
+    "onboarding.designatedRequirement": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app designated requirement:"
+          }
+        }
+      }
+    },
+    "status.disconnected": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnected"
+          }
+        }
+      }
+    },
+    "status.connecting": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connecting"
+          }
+        }
+      }
+    },
+    "status.connected": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "status.paused": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Paused"
+          }
+        }
+      }
+    },
+    "status.blocked": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Blocked"
+          }
+        }
+      }
+    },
+    "blocker.notPaired": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Mac is not paired."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "This Mac is not paired."
+          }
+        }
+      }
+    },
+    "blocker.invalidPairingCode": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Pairing code is invalid" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } }
+      }
+    },
+    "blocker.pairingRejected": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Pairing was rejected" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } }
+      }
+    },
+    "blocker.credentialUnavailable": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Mac Access credential is unavailable" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } }
+      }
+    },
+    "blocker.policyUnavailable": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Local execution policy is unavailable" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } }
+      }
+    },
+    "blocker.dashboardUnavailable": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Code pairing is unavailable until dashboard #669 is implemented."
+          }
+        }
+      }
+    },
+    "blocker.relayUnavailable": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Remote transport is unavailable until ws-proxy #73 is implemented."
+          }
+        }
+      }
+    },
+    "blocker.coreUnavailable": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connector authority is unavailable in this local-only build."
+          }
+        }
+      }
+    },
+    "blocker.emergencyStop": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency stop is active. Access is Off."
+          }
+        }
+      }
+    },
+    "blocker.permissionProofPending": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Signed permission identity proof is not available in this build."
+          }
+        }
+      }
+    },
+    "blocker.none": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local controls are ready."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Local controls are ready."
+          }
+        }
+      }
+    },
+    "action.pair": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair with Code…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pair with Code…"
+          }
+        }
+      }
+    },
+    "action.unpair": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpair"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unpair"
+          }
+        }
+      }
+    },
+    "action.connect": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Connect"
+          }
+        }
+      }
+    },
+    "action.disconnect": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
+    "action.accessMode": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access Mode"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Access Mode"
+          }
+        }
+      }
+    },
+    "action.permissions": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permissions"
+          }
+        }
+      }
+    },
+    "action.lastActivity": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last Activity"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Last Activity"
+          }
+        }
+      }
+    },
+    "action.pause": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pause"
+          }
+        }
+      }
+    },
+    "action.resume": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resume"
+          }
+        }
+      }
+    },
+    "action.revokeSelectedVM": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Revoke Selected VM"
+          }
+        }
+      }
+    },
+    "action.emergencyStop": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emergency Stop"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Emergency Stop"
+          }
+        }
+      }
+    },
+    "action.diagnostics": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Diagnostics…"
+          }
+        }
+      }
+    },
+    "action.update": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Check for Updates…"
+          }
+        }
+      }
+    },
+    "action.quit": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Quit evaOS Mac Access"
+          }
+        }
+      }
+    },
+    "action.close": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "mode.off": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "mode.fullAccess": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Access"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Full Access"
+          }
+        }
+      }
+    },
+    "permission.accessibility": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Accessibility Settings…"
+          }
+        }
+      }
+    },
+    "permission.screenRecording": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Open Screen Recording Settings…"
+          }
+        }
+      }
+    },
+    "activity.none": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No activity yet"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No activity yet"
+          }
+        }
+      }
+    },
+    "onboarding.title": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Set Up Mac Access"
+          }
+        }
+      }
+    },
+    "onboarding.pairingCode": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "12-character pairing code" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } }
+      }
+    },
+    "onboarding.backendBlocked": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
+          }
+        }
+      }
+    },
+    "onboarding.identityTitle": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected Permission Identity"
+          }
+        }
+      }
+    },
+    "onboarding.expectedExecutable": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected TCC-responsible executable:"
+          }
+        }
+      }
+    },
+    "onboarding.expectedBundle": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Expected app bundle identifier:"
+          }
+        }
+      }
+    },
+    "onboarding.helperInvoker": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permission helper identity:"
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Permission helper identity:"
+          }
+        }
+      }
+    },
+    "onboarding.permissionWarning": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
+          }
+        }
+      }
+    },
+    "onboarding.noSecrets": {
+      "localizations": {
+        "zh-CN": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "ja-JP": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "zh-TW": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "ko-KR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "tr-TR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "ru-RU": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "uk-UA": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "es-ES": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "fr-FR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        },
+        "fa-IR": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pairing codes and relay credentials are never displayed, copied, logged, or retained by this build."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
