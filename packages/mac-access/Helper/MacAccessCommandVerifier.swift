@@ -246,18 +246,27 @@ struct MacAccessCommandVerifier: Sendable {
 }
 
 struct MacAccessReplayWindow: Sendable {
-    private(set) var lastSequence: Int64 = 0
+    private struct Channel: Hashable, Sendable {
+        let sessionID: String
+        let generationID: String
+    }
+
+    private var lastSequenceByChannel: [Channel: Int64] = [:]
     private var commandIDs: Set<String> = []
     private var nonces: Set<String> = []
     private var contextIDs: Set<String> = []
 
     mutating func accept(_ command: MacAccessBrokerCommand) throws {
-        guard command.sequence > lastSequence,
+        let channel = Channel(
+            sessionID: command.sessionID,
+            generationID: command.channelGenerationID
+        )
+        guard command.sequence > lastSequenceByChannel[channel, default: 0],
               !commandIDs.contains(command.commandID),
               !nonces.contains(command.nonce),
               !contextIDs.contains(command.executionContext.claims.contextID)
         else { throw MacAccessPublicError.replayRejected }
-        lastSequence = command.sequence
+        lastSequenceByChannel[channel] = command.sequence
         commandIDs.insert(command.commandID)
         nonces.insert(command.nonce)
         contextIDs.insert(command.executionContext.claims.contextID)
