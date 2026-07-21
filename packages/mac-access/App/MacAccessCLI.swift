@@ -21,7 +21,7 @@ final class MacAccessControllerCLIClient: MacAccessCLIClient, @unchecked Sendabl
     func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
         if action == .stop {
             await controller.emergencyStop()
-            for _ in 0..<50 {
+            for _ in 0..<200 {
                 if let reply = await statusClient.fetchStatus(),
                    reply.status.transport == "stopped",
                    reply.status.accessMode == .off

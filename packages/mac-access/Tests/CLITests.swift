@@ -224,6 +224,34 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(status?.status.transport, "stopped")
         XCTAssertEqual(status?.status.accessMode, .off)
     }
+
+    func testControllerBackedCLIStopWaitsForSlowHelperCleanup() async {
+        let core = StatefulCLIClient(delayedStoppedStatusPolls: 55)
+        let initial = MacAccessState(
+            connection: .connected,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
+            isPaired: true,
+            blocker: nil
+        )
+        let controller = await MainActor.run {
+            MacAccessController(
+                client: core,
+                initialState: initial,
+                availability: .internalAlpha
+            )
+        }
+        let client = MacAccessControllerCLIClient(
+            controller: controller,
+            statusClient: core
+        )
+
+        let stopped = await client.perform(.stop)
+        let statusPolls = await core.statusPolls
+
+        XCTAssertEqual(stopped, .completed(.localEmergencyStop))
+        XCTAssertGreaterThan(statusPolls, 50)
+    }
 }
 
 @MainActor
@@ -239,7 +267,13 @@ private actor StatefulCLIClient: MacAccessCLIClient {
     private var mode = MacAccessMode.off
     private var pairing = "paired"
     private var transport = "connected"
+    private let delayedStoppedStatusPolls: Int
+    private(set) var statusPolls = 0
     private(set) var actions: [ConnectorCoreAction] = []
+
+    init(delayedStoppedStatusPolls: Int = 0) {
+        self.delayedStoppedStatusPolls = delayedStoppedStatusPolls
+    }
 
     func perform(_ action: ConnectorCoreAction) -> ConnectorCoreResult {
         actions.append(action)
@@ -277,18 +311,21 @@ private actor StatefulCLIClient: MacAccessCLIClient {
     }
 
     func fetchStatus() -> MacAccessXPCReply? {
-        MacAccessXPCReply(
+        statusPolls += 1
+        let isDelayedStoppedStatus = transport == "stopped"
+            && statusPolls <= delayedStoppedStatusPolls
+        return MacAccessXPCReply(
             code: .ok,
             status: MacAccessXPCSafeStatus(
                 pairing: pairing,
-                transport: transport,
-                lastErrorCode: transport == "stopped" ? "stopped" : nil,
+                transport: isDelayedStoppedStatus ? "connected" : transport,
+                lastErrorCode: transport == "stopped" && !isDelayedStoppedStatus ? "stopped" : nil,
                 lastAuditID: "redacted-audit-1",
                 permissions: MacAccessPermissionStatus(
                     accessibility: .granted,
                     screenRecording: .granted
                 ),
-                accessMode: mode
+                accessMode: isDelayedStoppedStatus ? .fullAccess : mode
             )
         )
     }
