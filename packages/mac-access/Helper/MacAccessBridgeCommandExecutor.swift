@@ -130,6 +130,7 @@ struct BundledMacAccessAdapterRunner: MacAccessAdapterRunning {
 }
 
 struct MacAccessBridgeCommandExecutor: MacAccessCommandExecutor {
+    static let maximumSeeResultBytes = 40 << 10
     private let runner: any MacAccessAdapterRunning
 
     init(runner: any MacAccessAdapterRunning = BundledMacAccessAdapterRunner()) {
@@ -175,11 +176,23 @@ struct MacAccessBridgeCommandExecutor: MacAccessCommandExecutor {
                 errorCode: "adapter_runtime_failed"
             )
         }
+        let result = reply.ok && capability == "customer_mac.desktop_see" ? reply.data : nil
+        if let result {
+            guard let encoded = try? MacAccessWire.canonicalData(for: result),
+                  encoded.count <= Self.maximumSeeResultBytes
+            else {
+                return MacAccessExecutionResult(
+                    localAuditID: reply.auditID,
+                    outcome: .failed,
+                    errorCode: "result_too_large"
+                )
+            }
+        }
         return MacAccessExecutionResult(
             localAuditID: reply.auditID,
             outcome: reply.ok ? .executed : .failed,
             errorCode: reply.errorCode,
-            result: reply.ok && capability == "customer_mac.desktop_see" ? reply.data : nil
+            result: result
         )
     }
 }

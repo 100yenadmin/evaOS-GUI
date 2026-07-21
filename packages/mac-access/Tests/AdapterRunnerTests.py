@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import types
 import unittest
@@ -48,6 +49,67 @@ class AdapterRunnerTests(unittest.TestCase):
             "adapter_runtime_permissionerror",
         )
         self.assertNotIn("private", RUNNER._runtime_error_code(error))
+
+    def test_see_result_compacts_fallback_metadata_for_relay(self):
+        compact = RUNNER._wire_safe_see_data(
+            {
+                "engine": "fallback",
+                "frontmost_app": "TextEdit",
+                "snapshot_id": "snap-1",
+                "screenshot": {"bytes": "x" * 100_000},
+                "ax": {"nodes": [{"private": "x" * 100_000}]},
+                "elements": [
+                    {
+                        "element_id": "el-1",
+                        "snapshot_id": "snap-1",
+                        "label": "Editor",
+                        "role": "AXTextArea",
+                        "bounds": {"x": 20, "y": 40, "width": 600, "height": 400},
+                        "center": {"x": 320, "y": 240},
+                        "actions": ["click"],
+                        "engine": "ax_fallback",
+                        "ax_target": {"path": ["x" * 100_000]},
+                    }
+                ],
+            }
+        )
+        self.assertEqual(compact["engine"], "fallback")
+        self.assertEqual(compact["elements"][0]["element_id"], "el-1")
+        self.assertEqual(compact["elements"][0]["center"], {"x": 320, "y": 240})
+        self.assertNotIn("screenshot", compact)
+        self.assertNotIn("ax", compact)
+        self.assertNotIn("ax_target", compact["elements"][0])
+        self.assertLessEqual(
+            len(json.dumps(compact, separators=(",", ":")).encode()),
+            RUNNER.MAX_WIRE_SEE_RESULT_BYTES,
+        )
+
+    def test_see_result_truncates_elements_at_wire_boundary(self):
+        compact = RUNNER._wire_safe_see_data(
+            {
+                "engine": "fallback",
+                "snapshot_id": "snap-2",
+                "elements": [
+                    {
+                        "element_id": f"el-{index}",
+                        "snapshot_id": "snap-2",
+                        "label": "x" * 500,
+                        "role": "AXButton",
+                        "bounds": {"x": index, "y": 1, "width": 20, "height": 20},
+                        "center": {"x": index + 10, "y": 11},
+                        "actions": ["click"],
+                        "engine": "ax_fallback",
+                    }
+                    for index in range(200)
+                ],
+            }
+        )
+        self.assertTrue(compact["wire_truncated"])
+        self.assertLess(len(compact["elements"]), 200)
+        self.assertLessEqual(
+            len(json.dumps(compact, separators=(",", ":")).encode()),
+            RUNNER.MAX_WIRE_SEE_RESULT_BYTES,
+        )
 
 
 if __name__ == "__main__":

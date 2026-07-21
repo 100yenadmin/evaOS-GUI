@@ -14,6 +14,7 @@ from typing import Any
 
 MAX_INPUT_BYTES = 64 * 1024
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+MAX_WIRE_SEE_RESULT_BYTES = 40 * 1024
 CAPABILITIES = {
     "customer_mac.desktop_see",
     "customer_mac.desktop_click",
@@ -159,6 +160,59 @@ def _runtime_error_code(error: Exception) -> str:
     )
 
 
+def _wire_safe_see_data(data: Any) -> dict[str, Any]:
+    """Keep the useful observation fields inside the relay's bounded result frame."""
+    if not isinstance(data, dict):
+        return {}
+
+    compact: dict[str, Any] = {}
+    for key in ("engine", "frontmost_app", "snapshot_id"):
+        value = data.get(key)
+        if isinstance(value, str):
+            compact[key] = value
+
+    cua_window = data.get("cua_window")
+    if isinstance(cua_window, dict):
+        compact["cua_window"] = {
+            key: cua_window[key]
+            for key in ("pid", "window_id", "app_name", "title")
+            if key in cua_window
+        }
+
+    source_elements = data.get("elements")
+    if not isinstance(source_elements, list):
+        source_elements = []
+    elements: list[dict[str, Any]] = []
+    for item in source_elements:
+        if not isinstance(item, dict):
+            continue
+        elements.append(
+            {
+                key: item[key]
+                for key in (
+                    "element_id",
+                    "snapshot_id",
+                    "label",
+                    "role",
+                    "bounds",
+                    "center",
+                    "actions",
+                    "engine",
+                )
+                if key in item
+            }
+        )
+    compact["elements"] = elements
+
+    def encoded_size() -> int:
+        return len(json.dumps(compact, separators=(",", ":"), ensure_ascii=True).encode("utf-8"))
+
+    while elements and encoded_size() > MAX_WIRE_SEE_RESULT_BYTES:
+        elements.pop()
+        compact["wire_truncated"] = True
+    return compact
+
+
 def execute(payload: dict[str, Any]) -> dict[str, Any]:
     audit_id = f"mac-access-{uuid.uuid4()}"
     try:
@@ -192,12 +246,15 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
         if not result.ok:
             first_error = result.errors[0] if result.errors else {}
             error_code = _safe_error_code(first_error.get("code"), "adapter_failed")
+        data = result.data
+        if result.ok and capability == "customer_mac.desktop_see":
+            data = _wire_safe_see_data(data)
         return {
             "schema_version": "evaos.mac_access.adapter_result.v1",
             "audit_id": audit_id,
             "ok": bool(result.ok),
             "error_code": error_code,
-            "data": result.data,
+            "data": data,
             "warnings": result.warnings,
             "errors": result.errors,
             "provenance": result.provenance,

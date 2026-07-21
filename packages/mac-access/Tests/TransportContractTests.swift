@@ -1432,6 +1432,27 @@ final class TransportContractTests: XCTestCase {
         XCTAssertEqual(malformed.errorCode, "adapter_runtime_failed")
     }
 
+    func testBridgeExecutorRejectsSeeResultThatCannotFitRelayFrame() async {
+        let oversized = String(repeating: "x", count: MacAccessBridgeCommandExecutor.maximumSeeResultBytes + 1)
+        let output = try! JSONSerialization.data(withJSONObject: [
+            "schema_version": "evaos.mac_access.adapter_result.v1",
+            "audit_id": "mac-access-audit-large",
+            "ok": true,
+            "error_code": NSNull(),
+            "data": ["payload": oversized],
+        ])
+        let result = await MacAccessBridgeCommandExecutor(
+            runner: FixtureAdapterRunner(
+                result: MacAccessAdapterProcessResult(
+                    exitCode: 0, standardOutput: output, timedOut: false
+                )
+            )
+        ).execute(capability: "customer_mac.desktop_see", request: [:])
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertEqual(result.errorCode, "result_too_large")
+        XCTAssertNil(result.result)
+    }
+
     private func credentialRecord(for fixture: SignedCommandFixture) -> MacAccessCredentialRecord {
         MacAccessCredentialRecord(
             privateKeyRaw: Curve25519.Signing.PrivateKey().rawRepresentation,
