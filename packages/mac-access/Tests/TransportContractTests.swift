@@ -136,7 +136,12 @@ private func replacing(
     )
 }
 
-private func makeNextSignedCommandFixture(after fixture: SignedCommandFixture) throws -> SignedCommandFixture {
+private func makeNextSignedCommandFixture(
+    after fixture: SignedCommandFixture,
+    sessionID: String? = nil,
+    channelGenerationID: String? = nil,
+    sequence: Int64? = nil
+) throws -> SignedCommandFixture {
     let old = fixture.command
     let claims = MacAccessExecutionContextClaims(
         schemaVersion: old.executionContext.claims.schemaVersion,
@@ -172,12 +177,12 @@ private func makeNextSignedCommandFixture(after fixture: SignedCommandFixture) t
     let payload = MacAccessCommandAuthorityPayload(
         schemaVersion: old.authorization.payload.schemaVersion,
         domain: old.authorization.payload.domain,
-        sessionID: old.sessionID,
-        channelGenerationID: old.channelGenerationID,
+        sessionID: sessionID ?? old.sessionID,
+        channelGenerationID: channelGenerationID ?? old.channelGenerationID,
         commandID: "command-02",
         issuedAt: old.issuedAt,
         expiresAt: old.expiresAt,
-        sequence: old.sequence + 1,
+        sequence: sequence ?? old.sequence + 1,
         policyEpoch: old.policyEpoch,
         nonce: MacAccessWire.base64URL(Data("broker-nonce-02".utf8)),
         binding: old.binding,
@@ -756,6 +761,57 @@ final class TransportContractTests: XCTestCase {
         XCTAssertEqual(executionCount, 1)
         let secondSent = await second.sent
         XCTAssertEqual(secondSent.count, 1)
+    }
+
+    func testNewAuthenticatedChannelMayRestartSequenceWithoutClearingReplayHistory() async throws {
+        let firstFixture = try makeSignedCommandFixture()
+        let secondFixture = try makeNextSignedCommandFixture(
+            after: firstFixture,
+            sessionID: "session-02",
+            channelGenerationID: "channel-generation-02",
+            sequence: 1
+        )
+        let firstAck = MacAccessRelayRegistrationAck(
+            schemaVersion: "evaos.mac_access.relay_registration_ack.v1",
+            messageType: "registration_ack",
+            sessionID: firstFixture.command.sessionID,
+            channelGenerationID: firstFixture.command.channelGenerationID
+        )
+        let secondAck = MacAccessRelayRegistrationAck(
+            schemaVersion: "evaos.mac_access.relay_registration_ack.v1",
+            messageType: "registration_ack",
+            sessionID: secondFixture.command.sessionID,
+            channelGenerationID: secondFixture.command.channelGenerationID
+        )
+        let first = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(firstAck), firstFixture.wire,
+        ])
+        let second = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(secondAck), secondFixture.wire,
+        ])
+        let executor = CountingExecutor()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: firstFixture)),
+            redeemer: UnusedRedeemer(), socketFactory: SequencedSocketFactory([first, second]),
+            executor: executor, pinnedKeys: firstFixture.keys,
+            relayURL: try relayURL(), now: { firstFixture.now }
+        )
+
+        await runtime.setAccessMode(.fullAccess)
+        _ = try await runtime.connect()
+        _ = try await runtime.processOneCommand()
+        _ = await runtime.disconnect()
+        _ = try await runtime.connect()
+        _ = try await runtime.processOneCommand()
+
+        let executionCount = await executor.executionCount
+        XCTAssertEqual(executionCount, 2)
+        let secondSent = await second.sent
+        XCTAssertEqual(secondSent.count, 2)
+        XCTAssertEqual(
+            try MacAccessWire.decodeStrict(MacAccessRelayReceipt.self, from: secondSent[1]).sequence,
+            1
+        )
     }
 
     func testRemoteRevokeReasonMatrixErasesOnlyGrantRevoked() async throws {
