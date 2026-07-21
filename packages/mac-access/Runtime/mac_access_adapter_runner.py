@@ -160,10 +160,10 @@ def _runtime_error_code(error: Exception) -> str:
     )
 
 
-def _wire_safe_see_data(data: Any) -> dict[str, Any]:
+def _wire_safe_see_data(data: Any) -> dict[str, Any] | None:
     """Keep the useful observation fields inside the relay's bounded result frame."""
     if not isinstance(data, dict):
-        return {}
+        return None
 
     compact: dict[str, Any] = {}
     for key in ("engine", "frontmost_app", "snapshot_id"):
@@ -202,6 +202,8 @@ def _wire_safe_see_data(data: Any) -> dict[str, Any]:
                 if key in item
             }
         )
+    if not elements:
+        return None
     compact["elements"] = elements
 
     def encoded_size() -> int:
@@ -247,12 +249,17 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
             first_error = result.errors[0] if result.errors else {}
             error_code = _safe_error_code(first_error.get("code"), "adapter_failed")
         data = result.data
+        ok = bool(result.ok)
         if result.ok and capability == "customer_mac.desktop_see":
             data = _wire_safe_see_data(data)
+            if data is None:
+                ok = False
+                error_code = "observation_unavailable"
+                data = {}
         return {
             "schema_version": "evaos.mac_access.adapter_result.v1",
             "audit_id": audit_id,
-            "ok": bool(result.ok),
+            "ok": ok,
             "error_code": error_code,
             "data": data,
             "warnings": result.warnings,

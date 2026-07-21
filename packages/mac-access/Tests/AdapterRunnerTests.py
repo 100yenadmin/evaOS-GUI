@@ -111,6 +111,18 @@ class AdapterRunnerTests(unittest.TestCase):
             RUNNER.MAX_WIRE_SEE_RESULT_BYTES,
         )
 
+    def test_see_result_rejects_screenshot_only_observation(self):
+        self.assertIsNone(
+            RUNNER._wire_safe_see_data(
+                {
+                    "engine": "fallback",
+                    "snapshot_id": "snap-screenshot-only",
+                    "screenshot": {"artifact_path": "~/private-local-artifact.png"},
+                    "elements": [],
+                }
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
