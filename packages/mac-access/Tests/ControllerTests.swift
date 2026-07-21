@@ -610,4 +610,46 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.connection, .blocked)
         XCTAssertEqual(controller.state.effectiveMode, .off)
     }
+
+    func testRelayUnavailableCanReconnectWithoutRestartingTheApp() async {
+        let client = RecordingConnectorClient(result: .completed(.connected))
+        let relayBlocked = MacAccessState(
+            connection: .blocked,
+            configuredMode: .fullAccess,
+            effectiveMode: .off,
+            isPaired: true,
+            blocker: .relayUnavailable
+        )
+        let controller = MacAccessController(client: client, initialState: relayBlocked)
+
+        let result = await controller.perform(.connect)
+        let actions = await client.recordedActions()
+
+        XCTAssertEqual(result, .completed(.connected))
+        XCTAssertEqual(actions, [.connect])
+        XCTAssertEqual(controller.state.connection, .connected)
+        XCTAssertEqual(controller.state.configuredMode, .fullAccess)
+        XCTAssertEqual(controller.state.effectiveMode, .fullAccess)
+        XCTAssertNil(controller.state.blocker)
+    }
+
+    func testReconnectDoesNotClearCredentialBlocker() async {
+        let client = RecordingConnectorClient(result: .completed(.connected))
+        let credentialBlocked = MacAccessState(
+            connection: .blocked,
+            configuredMode: .fullAccess,
+            effectiveMode: .off,
+            isPaired: true,
+            blocker: .credentialUnavailable
+        )
+        let controller = MacAccessController(client: client, initialState: credentialBlocked)
+
+        let result = await controller.perform(.connect)
+        let actions = await client.recordedActions()
+
+        XCTAssertEqual(result, .blocked(.credentialUnavailable))
+        XCTAssertEqual(actions, [])
+        XCTAssertEqual(controller.state.blocker, .credentialUnavailable)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+    }
 }

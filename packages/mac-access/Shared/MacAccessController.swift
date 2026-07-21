@@ -100,6 +100,13 @@ public final class MacAccessController: ObservableObject {
         if state.quitCleanupRequested, !ownsQuitCleanup {
             return .invalidated(.quitCleanup)
         }
+        if action == .connect,
+           inFlightCounts[actionGeneration, default: 0] == 0,
+           state.blocker == .relayUnavailable
+        {
+            machine.prepareForRelayReconnect()
+            state = machine.state
+        }
         if let blocker = localPreconditionBlocker(for: action) {
             invalidateCurrentGeneration(because: .localPrecondition(blocker))
             return apply(.blocked(blocker), for: action)

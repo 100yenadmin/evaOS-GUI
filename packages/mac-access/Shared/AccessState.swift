@@ -129,6 +129,16 @@ public struct MacAccessStateMachine: Sendable {
         state.lastActivityAt = date
     }
 
+    public mutating func prepareForRelayReconnect() {
+        guard state.isPaired,
+              state.connection == .blocked,
+              state.blocker == .relayUnavailable
+        else { return }
+        state.connection = .disconnected
+        state.effectiveMode = .off
+        state.blocker = nil
+    }
+
     public mutating func disconnect() {
         guard state.blocker == nil else {
             state.connection = .blocked
