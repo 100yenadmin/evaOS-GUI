@@ -19,12 +19,22 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Standalone source and bundle proof
-    runs-on: macos-15
+    name: Standalone source and bundle proof (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-14
+          - macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Swift 6 toolchain on macOS 14
+        if: matrix.runner == 'macos-14'
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
       - name: Validate scripts and frozen connector identities
         run: |
