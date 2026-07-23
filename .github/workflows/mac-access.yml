@@ -19,8 +19,14 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Standalone source and bundle proof
-    runs-on: macos-15
+    name: Standalone source and bundle proof (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-14
+          - macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
 
     steps:

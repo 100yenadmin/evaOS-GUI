@@ -1,6 +1,6 @@
 # evaOS Mac Access
 
-`packages/mac-access` is the standalone native macOS 15 menu-bar product for issue
+`packages/mac-access` is the standalone native macOS 14+ menu-bar product for issue
 [#701](https://github.com/100yenadmin/evaOS-GUI/issues/701). It builds and tests without
 `packages/desktop`, Workbench, backend access, Homebrew, or a customer-managed Python runtime.
 
