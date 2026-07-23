@@ -32,6 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Swift 6 toolchain on macOS 14
+        if: matrix.runner == 'macos-14'
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
       - name: Validate scripts and frozen connector identities
         run: |
           bash -n packages/mac-access/scripts/*.sh
