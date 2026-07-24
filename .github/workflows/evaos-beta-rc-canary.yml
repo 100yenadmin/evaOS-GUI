@@ -135,7 +135,7 @@ jobs:
             exit 1
           fi
 
-          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "tag_commit=$TAG_COMMIT" >> "$GITHUB_OUTPUT"
           echo "Validated $TAG at $TAG_COMMIT against ${EVAOS_BETA_RELEASE_BRANCH}."
 
       - name: Download release assets
@@ -266,14 +266,38 @@ jobs:
             echo "::error::Fallback release did not provide a ZIP or DMG with pattern $FALLBACK_PATTERN."
             exit 1
           fi
-          echo "FALLBACK_ASSET=$FALLBACK_ASSET" >> $GITHUB_ENV
+          echo "FALLBACK_ASSET=$FALLBACK_ASSET" >> "$GITHUB_ENV"
           ls -la fallback-assets
 
       - name: Prepare RC proof directory
+        id: prepare_proof
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
+          {
+            echo "RC_PHASE=prepare_proof"
+            echo "RC_CONNECTOR_START_INVOKED=false"
+            echo "RC_CONNECTOR_PROCESS_RUNNING=false"
+            echo "RC_CONNECTOR_PROCESS_EXIT_CODE="
+            echo "RC_CONNECTOR_ATTEMPTS=0"
+            echo "RC_CONNECTOR_TOKEN_EXISTS=false"
+            echo "RC_CONNECTOR_TOKEN_REGULAR=false"
+            echo "RC_CONNECTOR_TOKEN_OWNER_MATCH=false"
+            echo "RC_CONNECTOR_TOKEN_MODE_600=false"
+            echo "RC_CONNECTOR_TOKEN_NONEMPTY=false"
+            echo "RC_CONNECTOR_HEALTH_REACHABLE=false"
+            echo "RC_CONNECTOR_READINESS_CLASSIFICATION=not_started"
+            echo "RC_QA_STARTED=false"
+            echo "RC_QA_SUCCEEDED=false"
+            echo "RC_CONNECTOR_CLEANUP_ATTEMPTED=false"
+            echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=false"
+            echo "RC_WORKBENCH_CLEANUP_ATTEMPTED=false"
+            echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=false"
+            echo "RC_FALLBACK_LAUNCH_VERIFIED=false"
+            echo "RC_ROLLBACK_ATTEMPTED=false"
+            echo "RC_ROLLBACK_SUCCEEDED=false"
+          } >> "$GITHUB_ENV"
           rm -rf "$PROOF_DIR"
           mkdir -p "$PROOF_DIR/release-assets" "$PROOF_DIR/trusted-manifest"
           cp release-assets/evaos-beta-release-manifest.json "$PROOF_DIR/release-assets/evaos-beta-release-manifest.json"
@@ -305,6 +329,7 @@ jobs:
           TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
         run: |
           set -euo pipefail
+          echo "RC_PHASE=verify_updater_zip" >> "$GITHUB_ENV"
           ZIP_NAME_PATH="$RUNNER_TEMP/evaos-updater-zip-name.txt"
           node - release-assets/latest-arm64-mac.yml "$ZIP_NAME_PATH" <<'NODE'
           const fs = require('fs');
@@ -410,10 +435,12 @@ jobs:
           rm -rf "$EXTRACT_DIR"
 
       - name: Install fallback and beta apps
+        id: install_apps
         env:
           FALLBACK_APP_NAME: ${{ github.event.inputs.fallback_app_name }}
         run: |
           set -euo pipefail
+          echo "RC_PHASE=install_candidate" >> "$GITHUB_ENV"
           install_app_from_dmg() {
             local dmg="$1"
             local app_name="$2"
@@ -475,7 +502,34 @@ jobs:
             esac
           }
 
+          echo "mutation_started=true" >> "$GITHUB_OUTPUT"
           install_fallback_app "$FALLBACK_ASSET" "$FALLBACK_APP_NAME"
+
+          FALLBACK_PLIST="/Applications/$FALLBACK_APP_NAME/Contents/Info.plist"
+          if [ ! -f "$FALLBACK_PLIST" ]; then
+            echo "::error::Installed fallback app is missing Info.plist."
+            exit 1
+          fi
+          FALLBACK_EXPECTED_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$FALLBACK_PLIST")
+          FALLBACK_EXPECTED_PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$FALLBACK_PLIST")
+          FALLBACK_EXPECTED_SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$FALLBACK_PLIST")
+          FALLBACK_EXPECTED_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$FALLBACK_PLIST")
+          FALLBACK_EXPECTED_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$FALLBACK_PLIST")
+          if [[ ! "$FALLBACK_EXPECTED_BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]] || \
+            [[ ! "$FALLBACK_EXPECTED_PRODUCT_NAME" =~ ^[A-Za-z0-9._\ -]+$ ]] || \
+            [[ ! "$FALLBACK_EXPECTED_SHORT_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || \
+            [[ ! "$FALLBACK_EXPECTED_BUNDLE_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || \
+            [[ ! "$FALLBACK_EXPECTED_EXECUTABLE" =~ ^[A-Za-z0-9._\ -]+$ ]]; then
+            echo "::error::Installed fallback app has unsafe or incomplete bundle identity metadata."
+            exit 1
+          fi
+          {
+            echo "FALLBACK_EXPECTED_BUNDLE_ID=$FALLBACK_EXPECTED_BUNDLE_ID"
+            echo "FALLBACK_EXPECTED_PRODUCT_NAME=$FALLBACK_EXPECTED_PRODUCT_NAME"
+            echo "FALLBACK_EXPECTED_SHORT_VERSION=$FALLBACK_EXPECTED_SHORT_VERSION"
+            echo "FALLBACK_EXPECTED_BUNDLE_VERSION=$FALLBACK_EXPECTED_BUNDLE_VERSION"
+            echo "FALLBACK_EXPECTED_EXECUTABLE=$FALLBACK_EXPECTED_EXECUTABLE"
+          } >> "$GITHUB_ENV"
 
           SAME_APP_UPGRADE=false
           if [ "$FALLBACK_APP_NAME" = "$BETA_APP_NAME" ]; then
@@ -524,6 +578,7 @@ jobs:
       - name: Verify signing and Gatekeeper
         run: |
           set -euo pipefail
+          echo "RC_PHASE=verify_signing" >> "$GITHUB_ENV"
           BETA_APP="/Applications/$BETA_APP_NAME"
           BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
           if [ -z "$BETA_DMG" ]; then
@@ -542,12 +597,204 @@ jobs:
           TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
         run: |
           set -euo pipefail
+          echo "RC_PHASE=launch_candidate" >> "$GITHUB_ENV"
           BETA_APP="/Applications/$BETA_APP_NAME"
           BETA_PLIST="$BETA_APP/Contents/Info.plist"
           BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BETA_PLIST")
           PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$BETA_PLIST")
           SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$BETA_PLIST")
           BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$BETA_PLIST")
+          CONNECTOR_PID=""
+          CONNECTOR_STATE_DIR="$RUNNER_TEMP/evaos-rc-connector-state"
+          CONNECTOR_START_STDOUT="$RUNNER_TEMP/evaos-rc-connector-start.stdout.txt"
+          CONNECTOR_START_STDERR="$RUNNER_TEMP/evaos-rc-connector-start.stderr.txt"
+          PRE_CANARY_STDOUT="$RUNNER_TEMP/evaos-installed-candidate-pre-canary.stdout.json"
+          PRE_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-pre-canary.stderr.txt"
+          CONNECTOR_CANARY_STDOUT="$RUNNER_TEMP/evaos-installed-candidate-connector.stdout.json"
+          CONNECTOR_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-connector.stderr.txt"
+          WORKBENCH_PROCESS_SNAPSHOT="$RUNNER_TEMP/evaos-workbench-processes.txt"
+
+          write_exact_app_process_pids() {
+            local app_path="$1"
+            local process_snapshot="$2"
+            local pid_output="$3"
+
+            if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            if node - "$process_snapshot" "$app_path" "$pid_output" <<'NODE'
+          const fs = require('fs');
+          const [snapshotPath, appPath, outputPath] = process.argv.slice(2);
+          if (!appPath.startsWith('/Applications/') || !appPath.endsWith('.app')) process.exit(2);
+          const prefix = `${appPath}/Contents/`;
+          const pids = [];
+          for (const line of fs.readFileSync(snapshotPath, 'utf8').split(/\r?\n/)) {
+            const match = line.match(/^\s*(\d+)\s+(.+)$/);
+            if (match && match[2].startsWith(prefix)) pids.push(Number(match[1]));
+          }
+          const unique = [...new Set(pids)].sort((left, right) => left - right);
+          fs.writeFileSync(outputPath, unique.length > 0 ? `${unique.join('\n')}\n` : '', { mode: 0o600 });
+          NODE
+            then
+              rm -f "$process_snapshot"
+            else
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+          }
+
+          terminate_exact_app_processes() {
+            local app_path="$1"
+            local state_prefix="$2"
+            local process_snapshot="${state_prefix}.snapshot"
+            local pid_output="${state_prefix}.pids"
+            local process_id
+
+            if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            while IFS= read -r process_id; do
+              if [[ "$process_id" =~ ^[0-9]+$ ]]; then
+                kill "$process_id" >/dev/null 2>&1 || true
+              fi
+            done < "$pid_output"
+
+            for _workbench_cleanup_attempt in 1 2 3 4 5; do
+              if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+                rm -f "$process_snapshot" "$pid_output"
+                return 1
+              fi
+              if [ ! -s "$pid_output" ]; then
+                break
+              fi
+              sleep 1
+            done
+
+            if [ -s "$pid_output" ]; then
+              while IFS= read -r process_id; do
+                if [[ "$process_id" =~ ^[0-9]+$ ]]; then
+                  kill -9 "$process_id" >/dev/null 2>&1 || true
+                fi
+              done < "$pid_output"
+              sleep 1
+            fi
+            if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            if [ -s "$pid_output" ]; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            rm -f "$process_snapshot" "$pid_output"
+          }
+
+          connector_job_is_active() {
+            local job_pid
+            local job_snapshot
+
+            CONNECTOR_JOB_PROBE_FAILED=false
+            if ! job_snapshot=$(jobs -p); then
+              CONNECTOR_JOB_PROBE_FAILED=true
+              return 1
+            fi
+            for job_pid in $job_snapshot; do
+              if [ "$job_pid" = "$CONNECTOR_PID" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          cleanup_candidate_processes() {
+            local exit_status="$1"
+            local cleanup_failed=0
+            trap - EXIT INT TERM
+            if [ -n "${CONNECTOR_PID:-}" ]; then
+              echo "RC_CONNECTOR_CLEANUP_ATTEMPTED=true" >> "$GITHUB_ENV"
+              if connector_job_is_active; then
+                kill "$CONNECTOR_PID" >/dev/null 2>&1 || true
+              elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                cleanup_failed=1
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                for _cleanup_attempt in 1 2 3 4 5; do
+                  if ! connector_job_is_active; then
+                    if [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                      cleanup_failed=1
+                    fi
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                if connector_job_is_active; then
+                  kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true
+                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                  cleanup_failed=1
+                fi
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                for _cleanup_attempt in 1 2 3 4 5; do
+                  if ! connector_job_is_active; then
+                    if [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                      cleanup_failed=1
+                    fi
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                if connector_job_is_active; then
+                  cleanup_failed=1
+                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                  cleanup_failed=1
+                else
+                  set +e
+                  wait "$CONNECTOR_PID" >/dev/null 2>&1
+                  set -e
+                fi
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"
+              else
+                echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=false" >> "$GITHUB_ENV"
+              fi
+            fi
+            echo "RC_WORKBENCH_CLEANUP_ATTEMPTED=true" >> "$GITHUB_ENV"
+            if terminate_exact_app_processes "$BETA_APP" "$RUNNER_TEMP/evaos-rc-candidate-cleanup"; then
+              echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"
+            else
+              echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=false" >> "$GITHUB_ENV"
+              cleanup_failed=1
+            fi
+            rm -f "$CONNECTOR_START_STDOUT" "$CONNECTOR_START_STDERR" \
+              "$PRE_CANARY_STDOUT" "$PRE_CANARY_STDERR" \
+              "$CONNECTOR_CANARY_STDOUT" "$CONNECTOR_CANARY_STDERR" \
+              "$WORKBENCH_PROCESS_SNAPSHOT"
+            if [ -n "${PRE_CANARY_DIR:-}" ]; then
+              rm -rf "$PRE_CANARY_DIR"
+            fi
+            if [ -n "${CONNECTOR_CANARY_DIR:-}" ]; then
+              rm -rf "$CONNECTOR_CANARY_DIR"
+            fi
+            rm -rf "$CONNECTOR_STATE_DIR"
+            if [ "$cleanup_failed" -ne 0 ]; then
+              echo "::error::Harness-owned connector or exact candidate Workbench cleanup did not complete safely."
+              if [ "$exit_status" -eq 0 ]; then
+                echo "RC_CONNECTOR_READINESS_CLASSIFICATION=cleanup_failed" >> "$GITHUB_ENV"
+                exit_status=1
+              fi
+            fi
+            exit "$exit_status"
+          }
+          trap 'cleanup_candidate_processes $?' EXIT
+          trap 'cleanup_candidate_processes 130' INT
+          trap 'cleanup_candidate_processes 143' TERM
 
           if [ "$BETA_APP" != "/Applications/evaOS Workbench.app" ]; then
             echo "::error::RC canary must install the candidate at /Applications/evaOS Workbench.app, got $BETA_APP"
@@ -637,14 +884,34 @@ jobs:
 
           open -n "$BETA_APP"
           sleep 8
-          if ! pgrep -f "EvaOSWorkbench|evaOS Workbench" > /dev/null; then
-            echo "::error::Beta app did not launch a detectable process."
+          /bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"
+          set +e
+          node - "$WORKBENCH_PROCESS_SNAPSHOT" <<'NODE'
+          const fs = require('fs');
+          const snapshotPath = process.argv[2];
+          const canonicalApp = '/Applications/evaOS Workbench.app';
+          try {
+            const lines = fs.readFileSync(snapshotPath, 'utf8').split(/\r?\n/);
+            let canonicalMainCount = 0;
+            for (const line of lines) {
+              const command = line.replace(/^\s*\d+\s+/, '');
+              const match = command.match(/^(.+?\.app)\/Contents\/MacOS\/(?:evaOS Workbench|EvaOSWorkbench)$/);
+              if (match && match[1] !== canonicalApp) process.exit(2);
+              if (match) canonicalMainCount += 1;
+            }
+            if (canonicalMainCount === 0) process.exit(4);
+          } catch {
+            process.exit(3);
+          }
+          NODE
+          WORKBENCH_PROCESS_AUDIT_EXIT=$?
+          set -e
+          rm -f "$WORKBENCH_PROCESS_SNAPSHOT"
+          if [ "$WORKBENCH_PROCESS_AUDIT_EXIT" -eq 4 ]; then
+            echo "::error::Beta app did not launch its exact canonical main process."
             exit 1
-          fi
-          STALE_RUNNING_APPS="$(ps -axo pid=,command= | grep -E '/Volumes/LEXAR/Codex/.+\\.app/Contents/MacOS/(evaOS Workbench|EvaOSWorkbench)' || true)"
-          if [ -n "$STALE_RUNNING_APPS" ]; then
-            echo "::error::Stale Workbench app process is running from a Lexar proof/extract path."
-            printf '%s\n' "$STALE_RUNNING_APPS"
+          elif [ "$WORKBENCH_PROCESS_AUDIT_EXIT" -ne 0 ]; then
+            echo "::error::A noncanonical Workbench app process is running during installed-candidate proof."
             exit 1
           fi
 
@@ -653,9 +920,10 @@ jobs:
             echo "::error::Installed Workbench bridge launcher is missing or not executable."
             exit 1
           fi
-          PRE_CANARY_DIR="$PROOF_DIR/installed-candidate-pre-canary"
-          CONNECTOR_CANARY_DIR="$PROOF_DIR/installed-candidate-connector"
+          PRE_CANARY_DIR="$RUNNER_TEMP/evaos-installed-candidate-pre-canary"
+          CONNECTOR_CANARY_DIR="$RUNNER_TEMP/evaos-installed-candidate-connector"
           rm -rf "$PRE_CANARY_DIR" "$CONNECTOR_CANARY_DIR"
+          echo "RC_PHASE=pre_canary" >> "$GITHUB_ENV"
           set +e
           "$BRIDGE_COMMAND" pre-canary \
             --json \
@@ -665,8 +933,8 @@ jobs:
             --expected-source-commit "$TAG_COMMIT" \
             --canary-artifact-root "$RUNNER_TEMP" \
             --artifact-dir "$PRE_CANARY_DIR" \
-            > "$PROOF_DIR/installed-candidate-pre-canary.stdout.json" \
-            2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"
+            > "$PRE_CANARY_STDOUT" \
+            2> "$PRE_CANARY_STDERR"
           PRE_CANARY_EXIT=$?
           set -e
           PRE_CANARY_REPORT="$PRE_CANARY_DIR/qa-report.json"
@@ -721,28 +989,266 @@ jobs:
           fi
           cp "$PRE_CANARY_REPORT" "$PROOF_DIR/installed-candidate-pre-canary.json"
 
-          TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"
-          for _attempt in $(seq 1 30); do
-            if [ -s "$TOKEN_FILE" ] && curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/health >/dev/null; then
+          write_connector_start_summary() {
+            node - "$PROOF_DIR/installed-candidate-connector-start.json" "$@" <<'NODE'
+          const fs = require('fs');
+          const [
+            outputPath,
+            okRaw,
+            classification,
+            startInvokedRaw,
+            processRunningRaw,
+            processExitCodeRaw,
+            attemptsRaw,
+            tokenExistsRaw,
+            tokenRegularRaw,
+            tokenOwnerMatchRaw,
+            tokenMode600Raw,
+            tokenNonemptyRaw,
+            healthReachableRaw,
+          ] = process.argv.slice(2);
+          const classifications = new Set([
+            'ready',
+            'preexisting_state',
+            'preexisting_listener',
+            'process_exited',
+            'token_missing',
+            'token_invalid',
+            'health_unreachable',
+          ]);
+          const parseBoolean = (value) => {
+            if (value !== 'true' && value !== 'false') throw new Error('invalid boolean');
+            return value === 'true';
+          };
+          if (!classifications.has(classification)) throw new Error('invalid readiness classification');
+          const attempts = Number(attemptsRaw);
+          if (!Number.isInteger(attempts) || attempts < 0 || attempts > 100) throw new Error('invalid attempt count');
+          const processExitCode = processExitCodeRaw === '' ? null : Number(processExitCodeRaw);
+          if (
+            processExitCode !== null &&
+            (!Number.isInteger(processExitCode) || processExitCode < 0 || processExitCode > 255)
+          ) {
+            throw new Error('invalid process exit code');
+          }
+          const payload = {
+            schema: 'evaos-installed-connector-harness-start/v1',
+            ok: parseBoolean(okRaw),
+            classification,
+            mode: 'harness-owned-loopback',
+            startInvoked: parseBoolean(startInvokedRaw),
+            processRunning: parseBoolean(processRunningRaw),
+            processExitCode,
+            attempts,
+            token: {
+              atomicRead: classification === 'ready',
+              exists: parseBoolean(tokenExistsRaw),
+              regularFile: parseBoolean(tokenRegularRaw),
+              ownerMatchesRunner: parseBoolean(tokenOwnerMatchRaw),
+              mode0600: parseBoolean(tokenMode600Raw),
+              nonempty: parseBoolean(tokenNonemptyRaw),
+            },
+            health: { reachable: parseBoolean(healthReachableRaw) },
+          };
+          fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+          NODE
+          }
+
+          read_connector_token_state() {
+            TOKEN_EXISTS=false
+            TOKEN_REGULAR=false
+            TOKEN_OWNER_MATCH=false
+            TOKEN_MODE_600=false
+            TOKEN_NONEMPTY=false
+            if [ -e "$TOKEN_FILE" ] || [ -L "$TOKEN_FILE" ]; then
+              TOKEN_EXISTS=true
+            fi
+            if [ -f "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; then
+              TOKEN_REGULAR=true
+              if [ "$(stat -f '%u' "$TOKEN_FILE" 2>/dev/null || true)" = "$(id -u)" ]; then
+                TOKEN_OWNER_MATCH=true
+              fi
+              if [ "$(stat -f '%Lp' "$TOKEN_FILE" 2>/dev/null || true)" = "600" ]; then
+                TOKEN_MODE_600=true
+              fi
+              if [ -s "$TOKEN_FILE" ]; then
+                TOKEN_NONEMPTY=true
+              fi
+            fi
+          }
+
+          read_connector_token_atomically() {
+            node - "$TOKEN_FILE" <<'NODE'
+          const fs = require('fs');
+          const tokenPath = process.argv[2];
+          const noFollow = fs.constants.O_NOFOLLOW;
+          let descriptor;
+          try {
+            if (!Number.isInteger(noFollow) || noFollow <= 0 || typeof process.getuid !== 'function') process.exit(2);
+            descriptor = fs.openSync(tokenPath, fs.constants.O_RDONLY | noFollow);
+            const before = fs.fstatSync(descriptor);
+            if (
+              !before.isFile() ||
+              before.uid !== process.getuid() ||
+              (before.mode & 0o777) !== 0o600 ||
+              before.size < 32 ||
+              before.size > 129
+            ) {
+              process.exit(2);
+            }
+            const buffer = Buffer.alloc(130);
+            const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+            if (bytesRead === buffer.length || bytesRead !== before.size) process.exit(2);
+            const raw = buffer.subarray(0, bytesRead).toString('utf8');
+            const after = fs.fstatSync(descriptor);
+            if (
+              before.dev !== after.dev ||
+              before.ino !== after.ino ||
+              before.size !== after.size ||
+              before.mtimeMs !== after.mtimeMs ||
+              !/^[A-Za-z0-9_-]{32,128}\n?$/.test(raw)
+            ) {
+              process.exit(2);
+            }
+            process.stdout.write(raw.trimEnd());
+          } catch {
+            process.exitCode = 2;
+          } finally {
+            if (descriptor !== undefined) fs.closeSync(descriptor);
+          }
+          NODE
+          }
+
+          publish_connector_state() {
+            {
+              echo "RC_CONNECTOR_PROCESS_RUNNING=$CONNECTOR_PROCESS_RUNNING"
+              echo "RC_CONNECTOR_PROCESS_EXIT_CODE=$CONNECTOR_PROCESS_EXIT_CODE"
+              echo "RC_CONNECTOR_ATTEMPTS=$CONNECTOR_ATTEMPTS"
+              echo "RC_CONNECTOR_TOKEN_EXISTS=$TOKEN_EXISTS"
+              echo "RC_CONNECTOR_TOKEN_REGULAR=$TOKEN_REGULAR"
+              echo "RC_CONNECTOR_TOKEN_OWNER_MATCH=$TOKEN_OWNER_MATCH"
+              echo "RC_CONNECTOR_TOKEN_MODE_600=$TOKEN_MODE_600"
+              echo "RC_CONNECTOR_TOKEN_NONEMPTY=$TOKEN_NONEMPTY"
+              echo "RC_CONNECTOR_HEALTH_REACHABLE=$CONNECTOR_HEALTH_REACHABLE"
+              echo "RC_CONNECTOR_READINESS_CLASSIFICATION=$CONNECTOR_READINESS_CLASSIFICATION"
+            } >> "$GITHUB_ENV"
+          }
+
+          echo "RC_PHASE=connector_start" >> "$GITHUB_ENV"
+          rm -rf "$CONNECTOR_STATE_DIR"
+          mkdir -p "$CONNECTOR_STATE_DIR"
+          chmod 700 "$CONNECTOR_STATE_DIR"
+          TOKEN_FILE="$CONNECTOR_STATE_DIR/connector.token"
+          CONNECTOR_ATTEMPTS=0
+          CONNECTOR_PROCESS_RUNNING=false
+          CONNECTOR_PROCESS_EXIT_CODE=""
+          CONNECTOR_HEALTH_REACHABLE=false
+          CONNECTOR_READINESS_CLASSIFICATION=not_started
+          read_connector_token_state
+          if [ "$TOKEN_EXISTS" = true ]; then
+            CONNECTOR_READINESS_CLASSIFICATION=preexisting_state
+            publish_connector_state
+            write_connector_start_summary false preexisting_state false false "" 0 \
+              "$TOKEN_EXISTS" "$TOKEN_REGULAR" "$TOKEN_OWNER_MATCH" "$TOKEN_MODE_600" "$TOKEN_NONEMPTY" false
+            echo "::error::The isolated connector harness did not begin from an empty token state."
+            exit 1
+          fi
+          if /usr/sbin/lsof -nP -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then
+            CONNECTOR_READINESS_CLASSIFICATION=preexisting_listener
+            publish_connector_state
+            write_connector_start_summary false preexisting_listener false false "" 0 \
+              false false false false false false
+            echo "::error::The connector canary loopback endpoint was already occupied before harness start."
+            exit 1
+          fi
+
+          EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \
+          EVAOS_DESKTOP_BRIDGE_MODE=customer-mac-connector \
+          EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \
+          EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID=com.evaos.workbench \
+          EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_APP_PATH="$BETA_APP" \
+            "$BRIDGE_COMMAND" serve \
+              --host 127.0.0.1 \
+              --port 8765 \
+              --token-file "$TOKEN_FILE" \
+              > "$CONNECTOR_START_STDOUT" \
+              2> "$CONNECTOR_START_STDERR" &
+          CONNECTOR_PID=$!
+          echo "RC_CONNECTOR_START_INVOKED=true" >> "$GITHUB_ENV"
+
+          CONNECTOR_DEADLINE=$((SECONDS + 45))
+          while [ "$SECONDS" -lt "$CONNECTOR_DEADLINE" ]; do
+            CONNECTOR_ATTEMPTS=$((CONNECTOR_ATTEMPTS + 1))
+            read_connector_token_state
+            if ! kill -0 "$CONNECTOR_PID" >/dev/null 2>&1; then
+              set +e
+              wait "$CONNECTOR_PID" >/dev/null 2>&1
+              CONNECTOR_PROCESS_EXIT_CODE=$?
+              set -e
+              CONNECTOR_PID=""
+              CONNECTOR_PROCESS_RUNNING=false
+              CONNECTOR_READINESS_CLASSIFICATION=process_exited
+              {
+                echo "RC_CONNECTOR_CLEANUP_ATTEMPTED=true"
+                echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=true"
+              } >> "$GITHUB_ENV"
+              publish_connector_state
+              write_connector_start_summary false process_exited true false "$CONNECTOR_PROCESS_EXIT_CODE" \
+                "$CONNECTOR_ATTEMPTS" "$TOKEN_EXISTS" "$TOKEN_REGULAR" "$TOKEN_OWNER_MATCH" \
+                "$TOKEN_MODE_600" "$TOKEN_NONEMPTY" false
+              echo "::error::The harness-owned installed connector exited before becoming ready."
+              exit 1
+            fi
+            CONNECTOR_PROCESS_RUNNING=true
+            if [ "$TOKEN_REGULAR" = true ] && [ "$TOKEN_OWNER_MATCH" = true ] && \
+              [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ] && \
+              curl --fail --silent --max-time 2 http://127.0.0.1:8765/health >/dev/null 2>&1; then
+              CONNECTOR_HEALTH_REACHABLE=true
               break
             fi
             sleep 1
           done
-          if [ ! -s "$TOKEN_FILE" ]; then
-            echo "::error::Installed Workbench did not create its connector token."
+
+          read_connector_token_state
+          CONNECTOR_TOKEN=""
+          ATOMIC_TOKEN_EXIT=1
+          if [ "$TOKEN_REGULAR" = true ] && [ "$TOKEN_OWNER_MATCH" = true ] && \
+            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ]; then
+            set +e
+            CONNECTOR_TOKEN=$(read_connector_token_atomically 2>/dev/null)
+            ATOMIC_TOKEN_EXIT=$?
+            set -e
+          fi
+          if [ "$TOKEN_EXISTS" != true ]; then
+            CONNECTOR_READINESS_CLASSIFICATION=token_missing
+          elif [ "$TOKEN_REGULAR" != true ] || [ "$TOKEN_OWNER_MATCH" != true ] || \
+            [ "$TOKEN_MODE_600" != true ] || [ "$TOKEN_NONEMPTY" != true ] || \
+            [ "$ATOMIC_TOKEN_EXIT" -ne 0 ] || [ -z "$CONNECTOR_TOKEN" ]; then
+            CONNECTOR_READINESS_CLASSIFICATION=token_invalid
+          elif [ "$CONNECTOR_HEALTH_REACHABLE" != true ]; then
+            CONNECTOR_READINESS_CLASSIFICATION=health_unreachable
+          else
+            CONNECTOR_READINESS_CLASSIFICATION=ready
+          fi
+          publish_connector_state
+          write_connector_start_summary \
+            "$([ "$CONNECTOR_READINESS_CLASSIFICATION" = ready ] && printf true || printf false)" \
+            "$CONNECTOR_READINESS_CLASSIFICATION" true "$CONNECTOR_PROCESS_RUNNING" "" \
+            "$CONNECTOR_ATTEMPTS" "$TOKEN_EXISTS" "$TOKEN_REGULAR" "$TOKEN_OWNER_MATCH" \
+            "$TOKEN_MODE_600" "$TOKEN_NONEMPTY" "$CONNECTOR_HEALTH_REACHABLE"
+          if [ "$CONNECTOR_READINESS_CLASSIFICATION" != ready ]; then
+            CONNECTOR_TOKEN=""
+            unset CONNECTOR_TOKEN
+            echo "::error::The harness-owned installed connector did not become safely ready."
             exit 1
           fi
-          if ! curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/health >/dev/null; then
-            echo "::error::Installed Workbench connector did not become reachable."
-            exit 1
-          fi
-          CONNECTOR_TOKEN=$(tr -d '\r\n' < "$TOKEN_FILE")
-          if [ -z "$CONNECTOR_TOKEN" ]; then
-            echo "::error::Installed Workbench connector token is empty."
-            exit 1
-          fi
+          {
+            echo "RC_PHASE=connector_qa"
+            echo "RC_QA_STARTED=true"
+          } >> "$GITHUB_ENV"
           set +e
-          EVAOS_DESKTOP_BRIDGE_TOKEN="$CONNECTOR_TOKEN" "$BRIDGE_COMMAND" qa-canary \
+          EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \
+          EVAOS_DESKTOP_BRIDGE_TOKEN="$CONNECTOR_TOKEN" \
+            "$BRIDGE_COMMAND" qa-canary \
             --connector-url http://127.0.0.1:8765 \
             --artifact-dir "$CONNECTOR_CANARY_DIR" \
             --version-under-test "$SHORT_VERSION" \
@@ -751,8 +1257,8 @@ jobs:
             --surface connector \
             --suite control_start \
             --operator-ack-live-control \
-            > "$PROOF_DIR/installed-candidate-connector.stdout.json" \
-            2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"
+            > "$CONNECTOR_CANARY_STDOUT" \
+            2> "$CONNECTOR_CANARY_STDERR"
           QA_CANARY_EXIT=$?
           set -e
           if [ -f "$CONNECTOR_CANARY_DIR/qa-report.json" ]; then
@@ -772,10 +1278,14 @@ jobs:
           fi
           unset CONNECTOR_TOKEN
           if [ "$QA_CANARY_EXIT" -ne 0 ]; then
+            {
+              echo "RC_QA_SUCCEEDED=false"
+              echo "RC_CONNECTOR_READINESS_CLASSIFICATION=qa_failed"
+            } >> "$GITHUB_ENV"
             echo "::error::Installed candidate connector canary failed; inspect the sanitized proof artifact."
             exit 1
           fi
-          pkill -f "EvaOSWorkbench|evaOS Workbench" || true
+          echo "RC_QA_SUCCEEDED=true" >> "$GITHUB_ENV"
 
           {
             echo "PASS: evaOS Workbench launched with stable Workbench identity and no upstream AionUi feed."
@@ -808,13 +1318,25 @@ jobs:
           } > "$PROOF_DIR/updater-feed-audit.md"
 
       - name: Roll back beta and verify fallback
+        id: rollback_candidate
+        if: ${{ always() && steps.install_apps.outputs.mutation_started == 'true' }}
         env:
           FALLBACK_APP_NAME: ${{ github.event.inputs.fallback_app_name }}
           BROKER_SESSION_PROOF_REF: ${{ github.event.inputs.broker_session_proof_ref }}
+          PRIOR_JOB_STATUS: ${{ job.status }}
+          INSTALL_STEP_OUTCOME: ${{ steps.install_apps.outcome }}
         run: |
           set -euo pipefail
+          echo "RC_ROLLBACK_ATTEMPTED=true" >> "$GITHUB_ENV"
+          if [ "$PRIOR_JOB_STATUS" = "success" ]; then
+            echo "RC_PHASE=rollback" >> "$GITHUB_ENV"
+          fi
           FALLBACK_APP="/Applications/$FALLBACK_APP_NAME"
           BETA_APP="/Applications/$BETA_APP_NAME"
+          ROLLBACK_SAME_APP=false
+          if [ "$FALLBACK_APP_NAME" = "$BETA_APP_NAME" ]; then
+            ROLLBACK_SAME_APP=true
+          fi
 
           install_app_from_dmg() {
             local dmg="$1"
@@ -854,8 +1376,139 @@ jobs:
             ditto "$app_path" "/Applications/$app_name"
           }
 
+          write_exact_app_process_pids() {
+            local app_path="$1"
+            local process_snapshot="$2"
+            local pid_output="$3"
+
+            if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            if node - "$process_snapshot" "$app_path" "$pid_output" <<'NODE'
+          const fs = require('fs');
+          const [snapshotPath, appPath, outputPath] = process.argv.slice(2);
+          if (!appPath.startsWith('/Applications/') || !appPath.endsWith('.app')) process.exit(2);
+          const prefix = `${appPath}/Contents/`;
+          const pids = [];
+          for (const line of fs.readFileSync(snapshotPath, 'utf8').split(/\r?\n/)) {
+            const match = line.match(/^\s*(\d+)\s+(.+)$/);
+            if (match && match[2].startsWith(prefix)) pids.push(Number(match[1]));
+          }
+          const unique = [...new Set(pids)].sort((left, right) => left - right);
+          fs.writeFileSync(outputPath, unique.length > 0 ? `${unique.join('\n')}\n` : '', { mode: 0o600 });
+          NODE
+            then
+              rm -f "$process_snapshot"
+            else
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+          }
+
+          write_exact_app_main_pids() {
+            local app_path="$1"
+            local executable_name="$2"
+            local process_snapshot="$3"
+            local pid_output="$4"
+
+            if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            if node - "$process_snapshot" "$app_path" "$executable_name" "$pid_output" <<'NODE'
+          const fs = require('fs');
+          const [snapshotPath, appPath, executableName, outputPath] = process.argv.slice(2);
+          if (
+            !appPath.startsWith('/Applications/') ||
+            !appPath.endsWith('.app') ||
+            !/^[A-Za-z0-9._ -]+$/.test(executableName)
+          ) {
+            process.exit(2);
+          }
+          const executablePath = `${appPath}/Contents/MacOS/${executableName}`;
+          const pids = [];
+          for (const line of fs.readFileSync(snapshotPath, 'utf8').split(/\r?\n/)) {
+            const match = line.match(/^\s*(\d+)\s+(.+)$/);
+            if (match && match[2] === executablePath) {
+              pids.push(Number(match[1]));
+            }
+          }
+          const unique = [...new Set(pids)].sort((left, right) => left - right);
+          fs.writeFileSync(outputPath, unique.length > 0 ? `${unique.join('\n')}\n` : '', { mode: 0o600 });
+          NODE
+            then
+              rm -f "$process_snapshot"
+            else
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+          }
+
+          terminate_exact_app_processes() {
+            local app_path="$1"
+            local state_prefix="$2"
+            local process_snapshot="${state_prefix}.snapshot"
+            local pid_output="${state_prefix}.pids"
+            local process_id
+
+            if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            while IFS= read -r process_id; do
+              if [[ "$process_id" =~ ^[0-9]+$ ]]; then
+                kill "$process_id" >/dev/null 2>&1 || true
+              fi
+            done < "$pid_output"
+
+            for _workbench_cleanup_attempt in 1 2 3 4 5; do
+              if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+                rm -f "$process_snapshot" "$pid_output"
+                return 1
+              fi
+              if [ ! -s "$pid_output" ]; then
+                break
+              fi
+              sleep 1
+            done
+
+            if [ -s "$pid_output" ]; then
+              while IFS= read -r process_id; do
+                if [[ "$process_id" =~ ^[0-9]+$ ]]; then
+                  kill -9 "$process_id" >/dev/null 2>&1 || true
+                fi
+              done < "$pid_output"
+              sleep 1
+            fi
+            if ! write_exact_app_process_pids "$app_path" "$process_snapshot" "$pid_output"; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            if [ -s "$pid_output" ]; then
+              rm -f "$process_snapshot" "$pid_output"
+              return 1
+            fi
+            rm -f "$process_snapshot" "$pid_output"
+          }
+
+          echo "RC_WORKBENCH_CLEANUP_ATTEMPTED=true" >> "$GITHUB_ENV"
+          if ! terminate_exact_app_processes "$BETA_APP" "$RUNNER_TEMP/evaos-rollback-candidate-cleanup"; then
+            echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=false" >> "$GITHUB_ENV"
+            echo "::error::Exact candidate Workbench processes survived bounded rollback cleanup."
+            exit 1
+          fi
+          if [ "$FALLBACK_APP" != "$BETA_APP" ] && \
+            ! terminate_exact_app_processes "$FALLBACK_APP" "$RUNNER_TEMP/evaos-rollback-fallback-prelaunch-cleanup"; then
+            echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=false" >> "$GITHUB_ENV"
+            echo "::error::Exact fallback Workbench processes survived bounded prelaunch cleanup."
+            exit 1
+          fi
+          echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"
+
           rm -rf "$BETA_APP"
-          if [ "${SAME_APP_UPGRADE:-false}" = "true" ] || [ "${FALLBACK_REINSTALL_REQUIRED:-false}" = "true" ]; then
+          if [ "$INSTALL_STEP_OUTCOME" != "success" ] || [ "$ROLLBACK_SAME_APP" = "true" ] || \
+            [ "${FALLBACK_REINSTALL_REQUIRED:-false}" = "true" ] || [ ! -d "$FALLBACK_APP" ]; then
             case "${FALLBACK_ASSET:-}" in
               *.dmg)
                 install_app_from_dmg "$FALLBACK_ASSET" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/rollback-fallback-dmg"
@@ -868,11 +1521,11 @@ jobs:
                 exit 1
                 ;;
             esac
-          else
-            if [ -d "$BETA_APP" ]; then
-              echo "::error::Beta app is still present after rollback removal."
-              exit 1
-            fi
+          fi
+
+          if [ "$ROLLBACK_SAME_APP" != "true" ] && [ -d "$BETA_APP" ]; then
+            echo "::error::Beta app is still present after rollback removal."
+            exit 1
           fi
 
           if [ ! -d "$FALLBACK_APP" ]; then
@@ -880,13 +1533,103 @@ jobs:
             exit 1
           fi
 
-          open -n "$FALLBACK_APP"
-          sleep 8
-          if ! pgrep -f "${FALLBACK_APP_NAME%.app}" > /dev/null; then
-            echo "::error::Released fallback app did not launch after beta removal."
+          FALLBACK_PLIST="$FALLBACK_APP/Contents/Info.plist"
+          if [ ! -f "$FALLBACK_PLIST" ]; then
+            echo "::error::Restored fallback app is missing Info.plist."
             exit 1
           fi
-          pkill -f "${FALLBACK_APP_NAME%.app}" || true
+          ACTUAL_FALLBACK_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$FALLBACK_PLIST")
+          ACTUAL_FALLBACK_PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$FALLBACK_PLIST")
+          ACTUAL_FALLBACK_SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$FALLBACK_PLIST")
+          ACTUAL_FALLBACK_BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$FALLBACK_PLIST")
+          ACTUAL_FALLBACK_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$FALLBACK_PLIST")
+          if [[ ! "$ACTUAL_FALLBACK_BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]] || \
+            [[ ! "$ACTUAL_FALLBACK_PRODUCT_NAME" =~ ^[A-Za-z0-9._\ -]+$ ]] || \
+            [[ ! "$ACTUAL_FALLBACK_SHORT_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || \
+            [[ ! "$ACTUAL_FALLBACK_BUNDLE_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || \
+            [[ ! "$ACTUAL_FALLBACK_EXECUTABLE" =~ ^[A-Za-z0-9._\ -]+$ ]]; then
+            echo "::error::Restored fallback app has unsafe or incomplete bundle identity metadata."
+            exit 1
+          fi
+          if [ -n "${FALLBACK_EXPECTED_BUNDLE_ID:-}" ] || \
+            [ -n "${FALLBACK_EXPECTED_PRODUCT_NAME:-}" ] || \
+            [ -n "${FALLBACK_EXPECTED_SHORT_VERSION:-}" ] || \
+            [ -n "${FALLBACK_EXPECTED_BUNDLE_VERSION:-}" ] || \
+            [ -n "${FALLBACK_EXPECTED_EXECUTABLE:-}" ]; then
+            if [ "$ACTUAL_FALLBACK_BUNDLE_ID" != "${FALLBACK_EXPECTED_BUNDLE_ID:-}" ] || \
+              [ "$ACTUAL_FALLBACK_PRODUCT_NAME" != "${FALLBACK_EXPECTED_PRODUCT_NAME:-}" ] || \
+              [ "$ACTUAL_FALLBACK_SHORT_VERSION" != "${FALLBACK_EXPECTED_SHORT_VERSION:-}" ] || \
+              [ "$ACTUAL_FALLBACK_BUNDLE_VERSION" != "${FALLBACK_EXPECTED_BUNDLE_VERSION:-}" ] || \
+              [ "$ACTUAL_FALLBACK_EXECUTABLE" != "${FALLBACK_EXPECTED_EXECUTABLE:-}" ]; then
+              echo "::error::Restored fallback bundle identity does not match the downloaded fallback release asset."
+              exit 1
+            fi
+          fi
+
+          FALLBACK_MAIN_SNAPSHOT="$RUNNER_TEMP/evaos-rollback-fallback-main.snapshot"
+          FALLBACK_MAIN_PIDS="$RUNNER_TEMP/evaos-rollback-fallback-main.pids"
+          write_exact_app_main_pids \
+            "$FALLBACK_APP" \
+            "$ACTUAL_FALLBACK_EXECUTABLE" \
+            "$FALLBACK_MAIN_SNAPSHOT" \
+            "$FALLBACK_MAIN_PIDS"
+          if [ -s "$FALLBACK_MAIN_PIDS" ]; then
+            echo "::error::Fallback launch baseline was not clean after exact process cleanup."
+            rm -f "$FALLBACK_MAIN_SNAPSHOT" "$FALLBACK_MAIN_PIDS"
+            exit 1
+          fi
+
+          open -n "$FALLBACK_APP"
+          FALLBACK_LAUNCH_DEADLINE=$((SECONDS + 15))
+          while [ "$SECONDS" -lt "$FALLBACK_LAUNCH_DEADLINE" ]; do
+            write_exact_app_main_pids \
+              "$FALLBACK_APP" \
+              "$ACTUAL_FALLBACK_EXECUTABLE" \
+              "$FALLBACK_MAIN_SNAPSHOT" \
+              "$FALLBACK_MAIN_PIDS"
+            if [ -s "$FALLBACK_MAIN_PIDS" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ ! -s "$FALLBACK_MAIN_PIDS" ]; then
+            echo "::error::Released fallback app did not launch after beta removal."
+            rm -f "$FALLBACK_MAIN_SNAPSHOT" "$FALLBACK_MAIN_PIDS"
+            exit 1
+          fi
+          FALLBACK_LAUNCH_PID=""
+          while IFS= read -r process_id; do
+            if [[ "$process_id" =~ ^[0-9]+$ ]]; then
+              FALLBACK_LAUNCH_PID="$process_id"
+              break
+            fi
+          done < "$FALLBACK_MAIN_PIDS"
+          if [ -z "$FALLBACK_LAUNCH_PID" ]; then
+            echo "::error::Released fallback app launch did not yield a valid exact-path process."
+            rm -f "$FALLBACK_MAIN_SNAPSHOT" "$FALLBACK_MAIN_PIDS"
+            exit 1
+          fi
+          FALLBACK_LAUNCH_DWELL_SECONDS=8
+          for _fallback_dwell_second in 1 2 3 4 5 6 7 8; do
+            sleep 1
+            write_exact_app_main_pids \
+              "$FALLBACK_APP" \
+              "$ACTUAL_FALLBACK_EXECUTABLE" \
+              "$FALLBACK_MAIN_SNAPSHOT" \
+              "$FALLBACK_MAIN_PIDS"
+            if ! /usr/bin/grep -Fx "$FALLBACK_LAUNCH_PID" "$FALLBACK_MAIN_PIDS" >/dev/null 2>&1; then
+              echo "::error::Released fallback app did not remain running through the launch dwell."
+              rm -f "$FALLBACK_MAIN_SNAPSHOT" "$FALLBACK_MAIN_PIDS"
+              exit 1
+            fi
+          done
+          echo "RC_FALLBACK_LAUNCH_VERIFIED=true" >> "$GITHUB_ENV"
+          rm -f "$FALLBACK_MAIN_SNAPSHOT" "$FALLBACK_MAIN_PIDS"
+          if ! terminate_exact_app_processes "$FALLBACK_APP" "$RUNNER_TEMP/evaos-rollback-fallback-postlaunch-cleanup"; then
+            echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=false" >> "$GITHUB_ENV"
+            echo "::error::Exact fallback Workbench processes survived bounded postlaunch cleanup."
+            exit 1
+          fi
 
           /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
             | grep -Ei "evaos|workbench|${FALLBACK_APP_NAME%.app}" \
@@ -895,12 +1638,16 @@ jobs:
           {
             echo "PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state inspected; broker login/session proof reference: $BROKER_SESSION_PROOF_REF."
             echo "Candidate app rolled back: /Applications/$BETA_APP_NAME"
-            echo "Same-app upgrade: ${SAME_APP_UPGRADE:-false}"
+            echo "Same-app upgrade: $ROLLBACK_SAME_APP"
             echo "Fallback app launched: $FALLBACK_APP"
+            echo "Fallback exact bundle identity verified: true"
+            echo "Fallback exact main-process path verified: true"
+            echo "Fallback exact main-process dwell seconds: $FALLBACK_LAUNCH_DWELL_SECONDS"
             echo "data/cache disposition: GitHub runner is ephemeral; no user data migrated or deleted beyond beta app bundle removal."
             echo "protocol handler state: evaos-workbench / com.evaos.workbench; see launchservices-protocol-state.txt"
             echo "broker login/session: $BROKER_SESSION_PROOF_REF"
           } > "$PROOF_DIR/rollback-smoke.md"
+          echo "RC_ROLLBACK_SUCCEEDED=true" >> "$GITHUB_ENV"
 
       - name: Finalize and verify RC proof
         env:
@@ -911,6 +1658,7 @@ jobs:
           EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets
         run: |
           set -euo pipefail
+          echo "RC_PHASE=finalize_proof" >> "$GITHUB_ENV"
           {
             echo "Support route: 100yenadmin/evaOS-GUI."
             echo "The released macOS app remains the fallback while beta is gated."
@@ -931,6 +1679,7 @@ jobs:
           NODE
 
           node scripts/evaosBetaReleaseGate.js verify-rc-proof "$PROOF_DIR" "$TAG"
+          echo "RC_PHASE=upload_proof" >> "$GITHUB_ENV"
 
       - name: Upload RC proof packet
         uses: actions/upload-artifact@v4
@@ -940,16 +1689,123 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Write sanitized RC failure packet
+        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}
+        env:
+          INSTALL_MUTATION_STARTED: ${{ steps.install_apps.outputs.mutation_started }}
+          ROLLBACK_STEP_OUTCOME: ${{ steps.rollback_candidate.outcome }}
+        run: |
+          set -euo pipefail
+          rm -rf rc-failure-proof
+          mkdir -p rc-failure-proof
+          node - rc-failure-proof/failure-summary.json <<'NODE'
+          const fs = require('fs');
+          const outputPath = process.argv[2];
+          const allowedPhases = new Set([
+            'prepare_proof',
+            'verify_updater_zip',
+            'install_candidate',
+            'verify_signing',
+            'launch_candidate',
+            'pre_canary',
+            'connector_start',
+            'connector_qa',
+            'rollback',
+            'finalize_proof',
+            'upload_proof',
+          ]);
+          const allowedReadiness = new Set([
+            'not_started',
+            'ready',
+            'preexisting_state',
+            'preexisting_listener',
+            'process_exited',
+            'token_missing',
+            'token_invalid',
+            'health_unreachable',
+            'qa_failed',
+            'cleanup_failed',
+          ]);
+          const strictBoolean = (name) => {
+            const value = process.env[name];
+            if (value !== 'true' && value !== 'false') throw new Error(`invalid ${name}`);
+            return value === 'true';
+          };
+          const attempts = Number(process.env.RC_CONNECTOR_ATTEMPTS || '0');
+          if (!Number.isInteger(attempts) || attempts < 0 || attempts > 100) {
+            throw new Error('invalid connector attempt count');
+          }
+          const rawExitCode = process.env.RC_CONNECTOR_PROCESS_EXIT_CODE || '';
+          const processExitCode = rawExitCode === '' ? null : Number(rawExitCode);
+          if (
+            processExitCode !== null &&
+            (!Number.isInteger(processExitCode) || processExitCode < 0 || processExitCode > 255)
+          ) {
+            throw new Error('invalid connector process exit code');
+          }
+          const phase = allowedPhases.has(process.env.RC_PHASE) ? process.env.RC_PHASE : 'unknown';
+          const readiness = allowedReadiness.has(process.env.RC_CONNECTOR_READINESS_CLASSIFICATION)
+            ? process.env.RC_CONNECTOR_READINESS_CLASSIFICATION
+            : 'unknown';
+          const payload = {
+            schema: 'evaos-beta-rc-sanitized-failure/v1',
+            result: 'failed',
+            phase,
+            applicationMutationStarted: process.env.INSTALL_MUTATION_STARTED === 'true',
+            connector: {
+              startInvoked: strictBoolean('RC_CONNECTOR_START_INVOKED'),
+              processRunningAtReadiness: strictBoolean('RC_CONNECTOR_PROCESS_RUNNING'),
+              processExitCode,
+              attempts,
+              readiness,
+              token: {
+                exists: strictBoolean('RC_CONNECTOR_TOKEN_EXISTS'),
+                regularFile: strictBoolean('RC_CONNECTOR_TOKEN_REGULAR'),
+                ownerMatchesRunner: strictBoolean('RC_CONNECTOR_TOKEN_OWNER_MATCH'),
+                mode0600: strictBoolean('RC_CONNECTOR_TOKEN_MODE_600'),
+                nonempty: strictBoolean('RC_CONNECTOR_TOKEN_NONEMPTY'),
+              },
+              healthReachable: strictBoolean('RC_CONNECTOR_HEALTH_REACHABLE'),
+              qaStarted: strictBoolean('RC_QA_STARTED'),
+              qaSucceeded: strictBoolean('RC_QA_SUCCEEDED'),
+              cleanupAttempted: strictBoolean('RC_CONNECTOR_CLEANUP_ATTEMPTED'),
+              cleanupSucceeded: strictBoolean('RC_CONNECTOR_CLEANUP_SUCCEEDED'),
+            },
+            rollback: {
+              attempted: strictBoolean('RC_ROLLBACK_ATTEMPTED'),
+              workbenchCleanupAttempted: strictBoolean('RC_WORKBENCH_CLEANUP_ATTEMPTED'),
+              workbenchCleanupSucceeded: strictBoolean('RC_WORKBENCH_CLEANUP_SUCCEEDED'),
+              fallbackLaunchVerified: strictBoolean('RC_FALLBACK_LAUNCH_VERIFIED'),
+              succeeded:
+                strictBoolean('RC_ROLLBACK_SUCCEEDED') && process.env.ROLLBACK_STEP_OUTCOME === 'success',
+            },
+          };
+          fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Upload sanitized RC failure packet
+        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-beta-rc-failure-${{ github.event.inputs.tag }}
+          path: rc-failure-proof
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Summary
+        if: ${{ always() }}
         env:
           TAG: ${{ github.event.inputs.tag }}
           FALLBACK_REPO: ${{ github.event.inputs.fallback_release_repo }}
           FALLBACK_TAG: ${{ github.event.inputs.fallback_release_tag }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           {
             echo "### evaOS Beta RC Canary"
             echo ""
             echo "- Tag: \`${TAG}\`"
             echo "- Fallback release: \`${FALLBACK_REPO}@${FALLBACK_TAG}\`"
+            echo "- Result: \`${JOB_STATUS}\`"
             echo "- Proof artifact: \`evaos-beta-rc-proof-${TAG}\`"
-          } >> $GITHUB_STEP_SUMMARY
+            echo "- Sanitized failure artifact (failures only): \`evaos-beta-rc-failure-${TAG}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

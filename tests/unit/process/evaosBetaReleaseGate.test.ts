@@ -57,6 +57,107 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   bridgeWrapperScript: () => string;
   directorySha256: (sourceDir: string) => string;
 };
+
+function extractRcConnectorCleanupScript(workflow: string): string {
+  const start = workflow.indexOf('          connector_job_is_active() {');
+  const end = workflow.indexOf("\n          trap 'cleanup_candidate_processes $?' EXIT", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return workflow
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+}
+
+function rcConnectorCleanupProbe(cleanupScript: string): string {
+  return `set -euo pipefail
+jobs() {
+  probe_count=0
+  if [ -f "$JOB_PROBE_COUNT_FILE" ]; then
+    probe_count=$(< "$JOB_PROBE_COUNT_FILE")
+  fi
+  probe_count=$((probe_count + 1))
+  printf '%s\\n' "$probe_count" > "$JOB_PROBE_COUNT_FILE"
+  if [ "$FAKE_JOB_PROBE_ERROR" = "true" ] || \
+    { [ "$FAKE_JOB_PROBE_ERROR_AT" -gt 0 ] && [ "$probe_count" -eq "$FAKE_JOB_PROBE_ERROR_AT" ]; }; then
+    return 1
+  fi
+  if [ "$FAKE_JOB_ACTIVE" = "true" ]; then
+    printf '%s\\n' "$CONNECTOR_PID"
+  fi
+}
+kill() { printf '%s\\n' "$*" >> "$SIGNAL_LOG"; }
+sleep() { :; }
+wait() {
+  printf 'waited\\n' >> "$WAIT_LOG"
+  return 143
+}
+terminate_exact_app_processes() { return 0; }
+${cleanupScript}
+cleanup_candidate_processes 0
+`;
+}
+
+function rcConnectorCleanupEnv(
+  dir: string,
+  githubEnv: string,
+  waitLog: string,
+  signalLog: string,
+  active: boolean,
+  probeError = false,
+  probeErrorAt = 0
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    BETA_APP: '/Applications/evaOS Workbench.app',
+    CONNECTOR_CANARY_STDERR: path.join(dir, 'connector-canary.stderr'),
+    CONNECTOR_CANARY_STDOUT: path.join(dir, 'connector-canary.stdout'),
+    CONNECTOR_PID: '4242',
+    CONNECTOR_START_STDERR: path.join(dir, 'connector-start.stderr'),
+    CONNECTOR_START_STDOUT: path.join(dir, 'connector-start.stdout'),
+    CONNECTOR_STATE_DIR: path.join(dir, 'state'),
+    FAKE_JOB_ACTIVE: active ? 'true' : 'false',
+    FAKE_JOB_PROBE_ERROR: probeError ? 'true' : 'false',
+    FAKE_JOB_PROBE_ERROR_AT: String(probeErrorAt),
+    GITHUB_ENV: githubEnv,
+    JOB_PROBE_COUNT_FILE: path.join(dir, 'job-probe-count'),
+    PRE_CANARY_STDERR: path.join(dir, 'pre-canary.stderr'),
+    PRE_CANARY_STDOUT: path.join(dir, 'pre-canary.stdout'),
+    RUNNER_TEMP: dir,
+    SIGNAL_LOG: signalLog,
+    WAIT_LOG: waitLog,
+    WORKBENCH_PROCESS_SNAPSHOT: path.join(dir, 'workbench-processes.txt'),
+  };
+}
+
+function extractRcConnectorClassificationScript(workflow: string): string {
+  const start = workflow.indexOf(
+    '          read_connector_token_state\n          CONNECTOR_TOKEN=""\n          ATOMIC_TOKEN_EXIT=1'
+  );
+  const end = workflow.indexOf('\n          publish_connector_state', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return workflow
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+}
+
+function rcConnectorClassificationProbe(classificationScript: string): string {
+  return `set -euo pipefail
+read_connector_token_state() { :; }
+read_connector_token_atomically() {
+  if [ "$FAKE_ATOMIC_TOKEN_VALID" != "true" ]; then
+    return 2
+  fi
+  printf '%s' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+}
+${classificationScript}
+printf '%s\\n' "$CONNECTOR_READINESS_CLASSIFICATION"
+`;
+}
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
@@ -267,6 +368,32 @@ function writeArm64TrustEvidence(proofDir: string) {
             },
           ],
         },
+      },
+      null,
+      2
+    )}\n`
+  );
+  fs.writeFileSync(
+    path.join(proofDir, 'installed-candidate-connector-start.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-installed-connector-harness-start/v1',
+        ok: true,
+        classification: 'ready',
+        mode: 'harness-owned-loopback',
+        startInvoked: true,
+        processRunning: true,
+        processExitCode: null,
+        attempts: 1,
+        token: {
+          atomicRead: true,
+          exists: true,
+          regularFile: true,
+          ownerMatchesRunner: true,
+          mode0600: true,
+          nonempty: true,
+        },
+        health: { reachable: true },
       },
       null,
       2
@@ -1074,8 +1201,12 @@ describe('evaOS beta release gate', () => {
       'utf8'
     );
 
-    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"');
-    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"');
+    expect(workflow).toContain('PRE_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-pre-canary.stderr.txt"');
+    expect(workflow).toContain('CONNECTOR_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-connector.stderr.txt"');
+    expect(workflow).toContain('2> "$PRE_CANARY_STDERR"');
+    expect(workflow).toContain('2> "$CONNECTOR_CANARY_STDERR"');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stderr');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-connector.stderr');
     expect(workflow).toContain('LC_ALL=C grep -R -F -- "$CONNECTOR_TOKEN" "$PROOF_DIR"');
     expect(workflow).toMatch(/QA_CANARY_EXIT=\$\?[\s\S]*unset CONNECTOR_TOKEN[\s\S]*QA_CANARY_EXIT/);
     expect(workflow).toContain('EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets');
@@ -1142,6 +1273,12 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset';
     const controlStartIssue =
       '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite';
+    const harnessIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: installed connector proof must start the packaged bridge in an isolated harness before token polling and terminate only its captured child';
+    const rollbackIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: rollback must run after every post-install outcome';
+    const failurePacketIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: failures must upload only the allowlisted sanitized RC failure packet';
 
     expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
     expect(workflow).toContain("fs.writeFileSync(outputPath, String(asset.sha256).toLowerCase(), 'utf8');");
@@ -1176,6 +1313,208 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            --operator-ack-live-control \\\n', ''))
     ).toContain(controlStartIssue);
+    expect(releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('          CONNECTOR_PID=$!\n', ''))).toContain(
+      harnessIssue
+    );
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            CONNECTOR_JOB_PROBE_FAILED=false\n' +
+            '            if ! job_snapshot=$(jobs -p); then\n' +
+            '              CONNECTOR_JOB_PROBE_FAILED=true\n' +
+            '              return 1\n' +
+            '            fi\n',
+          '            if ! job_snapshot=$(jobs -p); then\n              return 0\n            fi\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('                wait "$CONNECTOR_PID" >/dev/null 2>&1\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\n' +
+            '                  cleanup_failed=1\n' +
+            '                else\n' +
+            '                  set +e\n' +
+            '                  wait "$CONNECTOR_PID" >/dev/null 2>&1\n',
+          '                else\n                  set +e\n                  wait "$CONNECTOR_PID" >/dev/null 2>&1\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ]; then\n',
+          '            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ] && \\\n' +
+            '            [ "$CONNECTOR_HEALTH_REACHABLE" = true ]; then\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            unset CONNECTOR_TOKEN\n', ''))
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            const buffer = Buffer.alloc(130);\n', ''))
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);\n',
+          "            const raw = fs.readFileSync(descriptor, 'utf8');\n"
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/bin/ps -ww -axo pid=,comm=', 'ps -axo pid=,command=')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"', 'ps -axo pid=,command=')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n',
+          '            node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('              if (match && match[1] !== canonicalApp) process.exit(2);\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('            if (canonicalMainCount === 0) process.exit(4);\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "        if: ${{ always() && steps.install_apps.outputs.mutation_started == 'true' }}\n",
+          "        if: ${{ success() && steps.install_apps.outputs.mutation_started == 'true' }}\n"
+        )
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          echo "mutation_started=true" >> "$GITHUB_OUTPUT"\n', '')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('[ "$INSTALL_STEP_OUTCOME" != "success" ]', '[ "$INSTALL_STEP_OUTCOME" = "success" ]')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          echo "RC_FALLBACK_LAUNCH_VERIFIED=true" >> "$GITHUB_ENV"\n', '')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('          FALLBACK_LAUNCH_DWELL_SECONDS=8\n', ''))
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/usr/bin/grep -Fx "$FALLBACK_LAUNCH_PID" "$FALLBACK_MAIN_PIDS"', '/usr/bin/true')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"\n\n          rm -rf "$BETA_APP"',
+          '          pkill -f "evaOS Workbench" || true\n\n          rm -rf "$BETA_APP"'
+        )
+      )
+    ).toContain(rollbackIssue);
+    const rollbackStepIndex = workflow.indexOf('      - name: Roll back beta and verify fallback');
+    const rollbackParserMutation = `${workflow.slice(0, rollbackStepIndex)}${workflow
+      .slice(rollbackStepIndex)
+      .replace(
+        '            if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n',
+        '            node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n'
+      )}`;
+    expect(releaseGate.collectRcCanaryWorkflowIssues(rollbackParserMutation)).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          path: rc-failure-proof\n', '          path: rc-proof\n')
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n",
+          '        if: ${{ success() }}\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n",
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n        continue-on-error: true\n"
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          mkdir -p rc-failure-proof\n',
+          '          mkdir -p rc-failure-proof\n          cp "$RUNNER_TEMP/raw.stderr" rc-failure-proof/raw.stderr\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          set -euo pipefail\n          rm -rf rc-failure-proof\n',
+          '          set -euo pipefail\n' +
+            '          # ${{ github.event.inputs.tag }}\n' +
+            '          rm -rf rc-failure-proof\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "              workbenchCleanupSucceeded: strictBoolean('RC_WORKBENCH_CLEANUP_SUCCEEDED'),\n",
+          ''
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            rollback: {\n',
+          '            rollback: {\n              fallbackPid: process.env.FALLBACK_LAUNCH_PID,\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            rollback: {\n',
+          '            rollback: {\n              secret: process.env.GH_TOKEN,\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          INSTALL_MUTATION_STARTED: ${{ steps.install_apps.outputs.mutation_started }}\n',
+          '          INSTALL_MUTATION_STARTED: ${{ steps.install_apps.outputs.mutation_started }}\n' +
+            '          GH_TOKEN: ${{ secrets.GH_TOKEN }}\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
 
     const installers = Array.from(
       workflow.matchAll(/^ {10}install_app_from_dmg\(\) \{\n[\s\S]*?^ {10}\}$/gm),
@@ -1204,6 +1543,138 @@ printf '%s\\n' ok
       );
       expect(output.trim()).toBe('ok');
     }
+  });
+
+  it('reaps an inactive captured connector job before reporting cleanup success', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const cleanupScript = extractRcConnectorCleanupScript(workflow);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-connector-cleanup-reap-'));
+    const githubEnv = path.join(dir, 'github.env');
+    const waitLog = path.join(dir, 'wait.log');
+    const signalLog = path.join(dir, 'signal.log');
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(githubEnv, '');
+    fs.writeFileSync(waitLog, '');
+    fs.writeFileSync(signalLog, '');
+    try {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorCleanupProbe(cleanupScript)], {
+        encoding: 'utf8',
+        env: rcConnectorCleanupEnv(dir, githubEnv, waitLog, signalLog, false),
+      });
+
+      expect(result.status).toBe(0);
+      expect(fs.readFileSync(waitLog, 'utf8')).toBe('waited\n');
+      expect(fs.readFileSync(signalLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=true');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails connector cleanup without waiting when the captured job survives SIGKILL', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const cleanupScript = extractRcConnectorCleanupScript(workflow);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-connector-cleanup-stuck-'));
+    const githubEnv = path.join(dir, 'github.env');
+    const waitLog = path.join(dir, 'wait.log');
+    const signalLog = path.join(dir, 'signal.log');
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(githubEnv, '');
+    fs.writeFileSync(waitLog, '');
+    fs.writeFileSync(signalLog, '');
+    try {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorCleanupProbe(cleanupScript)], {
+        encoding: 'utf8',
+        env: rcConnectorCleanupEnv(dir, githubEnv, waitLog, signalLog, true),
+      });
+
+      expect(result.status).toBe(1);
+      expect(fs.readFileSync(waitLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(signalLog, 'utf8')).toContain('-9 4242');
+      expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=false');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails connector cleanup boundedly when the job ownership probe errors', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const cleanupScript = extractRcConnectorCleanupScript(workflow);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-connector-cleanup-probe-error-'));
+    const githubEnv = path.join(dir, 'github.env');
+    const waitLog = path.join(dir, 'wait.log');
+    const signalLog = path.join(dir, 'signal.log');
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(githubEnv, '');
+    fs.writeFileSync(waitLog, '');
+    fs.writeFileSync(signalLog, '');
+    try {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorCleanupProbe(cleanupScript)], {
+        encoding: 'utf8',
+        env: rcConnectorCleanupEnv(dir, githubEnv, waitLog, signalLog, false, true),
+      });
+
+      expect(result.status).toBe(1);
+      expect(fs.readFileSync(waitLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(signalLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=false');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails connector cleanup without signaling or waiting when the final ownership probe errors', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const cleanupScript = extractRcConnectorCleanupScript(workflow);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-connector-cleanup-final-probe-error-'));
+    const githubEnv = path.join(dir, 'github.env');
+    const waitLog = path.join(dir, 'wait.log');
+    const signalLog = path.join(dir, 'signal.log');
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(githubEnv, '');
+    fs.writeFileSync(waitLog, '');
+    fs.writeFileSync(signalLog, '');
+    try {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorCleanupProbe(cleanupScript)], {
+        encoding: 'utf8',
+        env: rcConnectorCleanupEnv(dir, githubEnv, waitLog, signalLog, false, false, 5),
+      });
+
+      expect(result.status).toBe(1);
+      expect(fs.readFileSync(path.join(dir, 'job-probe-count'), 'utf8')).toBe('5\n');
+      expect(fs.readFileSync(waitLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(signalLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=false');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('distinguishes an unreachable connector health endpoint from an invalid token', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const classificationScript = extractRcConnectorClassificationScript(workflow);
+    const runClassification = (atomicTokenValid: boolean) =>
+      spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorClassificationProbe(classificationScript)], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CONNECTOR_HEALTH_REACHABLE: 'false',
+          FAKE_ATOMIC_TOKEN_VALID: atomicTokenValid ? 'true' : 'false',
+          TOKEN_EXISTS: 'true',
+          TOKEN_MODE_600: 'true',
+          TOKEN_NONEMPTY: 'true',
+          TOKEN_OWNER_MATCH: 'true',
+          TOKEN_REGULAR: 'true',
+        },
+      });
+
+    const validToken = runClassification(true);
+    expect(validToken.status).toBe(0);
+    expect(validToken.stdout.trim()).toBe('health_unreachable');
+
+    const invalidToken = runClassification(false);
+    expect(invalidToken.status).toBe(0);
+    expect(invalidToken.stdout.trim()).toBe('token_invalid');
   });
 
   it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {
@@ -3701,7 +4172,12 @@ printf '%s\\n' ok
       );
       fs.writeFileSync(
         path.join(proofDir, 'rollback-smoke.md'),
-        'PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state evaos-workbench / com.evaos.workbench inspected; broker login/session state remained usable.\n'
+        [
+          'PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state evaos-workbench / com.evaos.workbench inspected; broker login/session state remained usable.',
+          'Fallback exact bundle identity verified: true',
+          'Fallback exact main-process path verified: true',
+          'Fallback exact main-process dwell seconds: 8',
+        ].join('\n') + '\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'support-notes.md'),
@@ -3717,6 +4193,54 @@ printf '%s\\n' ok
           EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toBe(true);
+
+      const rollbackProofPath = path.join(proofDir, 'rollback-smoke.md');
+      const rollbackProof = fs.readFileSync(rollbackProofPath, 'utf8');
+      for (const requiredMarker of [
+        'Fallback exact bundle identity verified: true',
+        'Fallback exact main-process path verified: true',
+        'Fallback exact main-process dwell seconds: 8',
+      ]) {
+        fs.writeFileSync(rollbackProofPath, rollbackProof.replace(`${requiredMarker}\n`, ''));
+        expect(() =>
+          releaseGate.verifyRcProof(proofDir, tag, {
+            GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+            EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+            EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+            EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+            EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+          })
+        ).toThrow(/rollback-smoke/i);
+      }
+      fs.writeFileSync(rollbackProofPath, rollbackProof);
+
+      const connectorStartProofPath = path.join(proofDir, 'installed-candidate-connector-start.json');
+      const connectorStartProof = JSON.parse(fs.readFileSync(connectorStartProofPath, 'utf8'));
+      connectorStartProof.token.mode0600 = false;
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/mode0600|strict successful harness summary/);
+      connectorStartProof.token.mode0600 = true;
+      connectorStartProof.rawMessage = 'Bearer secret https://private.example /Users/private/connector.token';
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/strict successful harness summary/);
+      delete connectorStartProof.rawMessage;
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
 
       const updaterMetadataPath = path.join(proofDir, 'release-assets', 'latest-arm64-mac.yml');
       const updaterMetadata = fs.readFileSync(updaterMetadataPath, 'utf8');

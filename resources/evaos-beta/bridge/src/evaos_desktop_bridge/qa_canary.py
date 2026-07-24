@@ -668,6 +668,7 @@ def _run_local_workbench_cli(
                 "LANG",
                 "LC_ALL",
                 "__CF_USER_TEXT_ENCODING",
+                "EVAOS_DESKTOP_BRIDGE_STATE_DIR",
             )
             if (value := os.environ.get(key))
         },

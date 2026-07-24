@@ -18,6 +18,7 @@ const committedBridgeSourceIdentityCache = new Map();
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const LIVE_CANARY_VERIFIER_SHA256 = '701828332e3c35497294359980944e7021064384a6a0304157af7885897462bd';
 const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '7d3bc23e52e3e342782b2903664572b15754782db4e67155cdb869c4c8d93d3b';
+const RC_FAILURE_WRITER_RUN_SHA256 = '3bc736c433a70d49fbcceb08c2b9ce714cf2fabb350719eb481ba08a9b81c31f';
 
 const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
   {
@@ -206,6 +207,20 @@ const REQUIRED_RC_PROOF_CHECKS = [
     ],
   },
   {
+    id: 'installed-candidate-connector-start',
+    evidence: 'installed-candidate-connector-start.json',
+    requiredText: [
+      '"ok": true',
+      '"classification": "ready"',
+      '"mode": "harness-owned-loopback"',
+      '"startInvoked": true',
+      '"processRunning": true',
+      '"atomicRead": true',
+      '"mode0600": true',
+      '"reachable": true',
+    ],
+  },
+  {
     id: 'installed-candidate-connector',
     evidence: 'installed-candidate-connector.json',
     requiredText: [
@@ -260,6 +275,9 @@ const REQUIRED_RC_PROOF_CHECKS = [
       'evaos-workbench',
       'com.evaos.workbench',
       'broker login/session',
+      'Fallback exact bundle identity verified: true',
+      'Fallback exact main-process path verified: true',
+      'Fallback exact main-process dwell seconds: 8',
     ],
   },
   {
@@ -955,6 +973,215 @@ function collectRcCanaryWorkflowIssues(workflow) {
         '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite'
       );
     }
+    const installedCandidateRun = runLines.join('\n');
+    const installedProcessHelperStart = installedCandidateRun.indexOf('write_exact_app_process_pids() {');
+    const installedProcessHelperEnd = installedCandidateRun.indexOf(
+      'terminate_exact_app_processes() {',
+      installedProcessHelperStart
+    );
+    const installedProcessHelper =
+      installedProcessHelperStart >= 0 && installedProcessHelperEnd > installedProcessHelperStart
+        ? installedCandidateRun.slice(installedProcessHelperStart, installedProcessHelperEnd)
+        : '';
+    const connectorCleanupStart = installedCandidateRun.indexOf('connector_job_is_active() {');
+    const connectorCleanupEnd = installedCandidateRun.indexOf(
+      "trap 'cleanup_candidate_processes $?' EXIT",
+      connectorCleanupStart
+    );
+    const connectorCleanup =
+      connectorCleanupStart >= 0 && connectorCleanupEnd > connectorCleanupStart
+        ? installedCandidateRun.slice(connectorCleanupStart, connectorCleanupEnd)
+        : '';
+    const connectorKillIndex = connectorCleanup.indexOf('kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true');
+    const connectorWaitIndex = connectorCleanup.indexOf('wait "$CONNECTOR_PID" >/dev/null 2>&1');
+    const connectorSuccessIndex = connectorCleanup.indexOf('RC_CONNECTOR_CLEANUP_SUCCEEDED=true');
+    const trapIndex = installedCandidateRun.indexOf("trap 'cleanup_candidate_processes $?' EXIT");
+    const serveIndex = installedCandidateRun.indexOf('"$BRIDGE_COMMAND" serve \\');
+    const deadlineIndex = installedCandidateRun.indexOf('CONNECTOR_DEADLINE=$((SECONDS + 45))');
+    const tokenReadIndex = installedCandidateRun.indexOf(
+      'CONNECTOR_TOKEN=$(read_connector_token_atomically 2>/dev/null)'
+    );
+    const atomicTokenGateStart = installedCandidateRun.indexOf('ATOMIC_TOKEN_EXIT=1', deadlineIndex);
+    const connectorClassificationStart = installedCandidateRun.indexOf(
+      'if [ "$TOKEN_EXISTS" != true ]; then',
+      atomicTokenGateStart
+    );
+    const atomicTokenGate =
+      atomicTokenGateStart >= 0 && connectorClassificationStart > atomicTokenGateStart
+        ? installedCandidateRun.slice(atomicTokenGateStart, connectorClassificationStart)
+        : '';
+    if (
+      trapIndex < 0 ||
+      serveIndex < 0 ||
+      deadlineIndex < 0 ||
+      tokenReadIndex < 0 ||
+      trapIndex > serveIndex ||
+      serveIndex > deadlineIndex ||
+      deadlineIndex > tokenReadIndex ||
+      tokenReadIndex > connectorClassificationStart ||
+      atomicTokenGate.includes('CONNECTOR_HEALTH_REACHABLE') ||
+      !installedCandidateRun.includes('TOKEN_FILE="$CONNECTOR_STATE_DIR/connector.token"') ||
+      !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\') ||
+      !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\') ||
+      !installedCandidateRun.includes('CONNECTOR_PID=$!') ||
+      !connectorCleanup.includes(
+        'CONNECTOR_JOB_PROBE_FAILED=false\nif ! job_snapshot=$(jobs -p); then\nCONNECTOR_JOB_PROBE_FAILED=true\nreturn 1\nfi'
+      ) ||
+      !connectorCleanup.includes(
+        'if connector_job_is_active; then\nkill "$CONNECTOR_PID" >/dev/null 2>&1 || true\nelif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\ncleanup_failed=1\nfi'
+      ) ||
+      !connectorCleanup.includes(
+        'if connector_job_is_active; then\ncleanup_failed=1\nelif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\ncleanup_failed=1\nelse\nset +e\nwait "$CONNECTOR_PID" >/dev/null 2>&1\nset -e\nfi'
+      ) ||
+      connectorKillIndex < 0 ||
+      connectorWaitIndex <= connectorKillIndex ||
+      connectorSuccessIndex <= connectorWaitIndex ||
+      !connectorCleanup.includes('set +e\nwait "$CONNECTOR_PID" >/dev/null 2>&1\nset -e') ||
+      !installedCandidateRun.includes('stat -f \'%Lp\' "$TOKEN_FILE"') ||
+      !installedCandidateRun.includes('const noFollow = fs.constants.O_NOFOLLOW;') ||
+      !installedCandidateRun.includes('const before = fs.fstatSync(descriptor);') ||
+      !installedCandidateRun.includes('const buffer = Buffer.alloc(130);') ||
+      !installedCandidateRun.includes('const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);') ||
+      installedCandidateRun.includes("fs.readFileSync(descriptor, 'utf8')") ||
+      !installedCandidateRun.includes('/bin/ps -ww -axo pid=,comm=') ||
+      !installedProcessHelper.includes('if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then') ||
+      !installedProcessHelper.includes('if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'') ||
+      installedProcessHelper.split('return 1').length - 1 < 2 ||
+      !installedCandidateRun.includes('terminate_exact_app_processes "$BETA_APP"') ||
+      installedCandidateRun.includes('pkill -f "EvaOSWorkbench|evaOS Workbench"') ||
+      installedCandidateRun.includes('pgrep -f "EvaOSWorkbench|evaOS Workbench"') ||
+      !installedCandidateRun.includes('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"') ||
+      !installedCandidateRun.includes("const canonicalApp = '/Applications/evaOS Workbench.app';") ||
+      !installedCandidateRun.includes('if (match && match[1] !== canonicalApp) process.exit(2);') ||
+      !installedCandidateRun.includes('if (canonicalMainCount === 0) process.exit(4);') ||
+      !installedCandidateRun.includes('CONNECTOR_READINESS_CLASSIFICATION=health_unreachable') ||
+      !installedCandidateRun.includes('CONNECTOR_TOKEN=""\nunset CONNECTOR_TOKEN') ||
+      installedCandidateRun.includes('connector-service start')
+    ) {
+      issues.push(
+        '.github/workflows/evaos-beta-rc-canary.yml: installed connector proof must start the packaged bridge in an isolated harness before token polling and terminate only its captured child'
+      );
+    }
+    if (
+      installedCandidateRun.includes('$PROOF_DIR/installed-candidate-pre-canary.stdout') ||
+      installedCandidateRun.includes('$PROOF_DIR/installed-candidate-pre-canary.stderr') ||
+      installedCandidateRun.includes('$PROOF_DIR/installed-candidate-connector.stdout') ||
+      installedCandidateRun.includes('$PROOF_DIR/installed-candidate-connector.stderr')
+    ) {
+      issues.push(
+        '.github/workflows/evaos-beta-rc-canary.yml: raw installed-bridge stdout and stderr must remain outside uploaded RC proof directories'
+      );
+    }
+  }
+  const rollbackSteps = getWorkflowNamedStepBlocks(workflow, 'Roll back beta and verify fallback');
+  const rollbackIfValues = rollbackSteps.length === 1 ? getWorkflowStepScalarValues(rollbackSteps[0], 'if') : [];
+  const installSteps = getWorkflowNamedStepBlocks(workflow, 'Install fallback and beta apps');
+  const installRun =
+    installSteps.length === 1
+      ? getExecutableBlockLines(getWorkflowStepPropertyBlock(installSteps[0], 'run', true)).join('\n')
+      : '';
+  const mutationMarkerIndex = installRun.indexOf('echo "mutation_started=true" >> "$GITHUB_OUTPUT"');
+  const fallbackInstallIndex = installRun.indexOf('install_fallback_app "$FALLBACK_ASSET" "$FALLBACK_APP_NAME"');
+  const rollbackRun =
+    rollbackSteps.length === 1
+      ? getExecutableBlockLines(getWorkflowStepPropertyBlock(rollbackSteps[0], 'run', true)).join('\n')
+      : '';
+  const fallbackDwellIndex = rollbackRun.indexOf('FALLBACK_LAUNCH_DWELL_SECONDS=8');
+  const fallbackVerifiedIndex = rollbackRun.indexOf('echo "RC_FALLBACK_LAUNCH_VERIFIED=true" >> "$GITHUB_ENV"');
+  const rollbackProcessHelperStart = rollbackRun.indexOf('write_exact_app_process_pids() {');
+  const rollbackMainHelperStart = rollbackRun.indexOf('write_exact_app_main_pids() {', rollbackProcessHelperStart);
+  const rollbackTerminateHelperStart = rollbackRun.indexOf(
+    'terminate_exact_app_processes() {',
+    rollbackMainHelperStart
+  );
+  const rollbackProcessHelper =
+    rollbackProcessHelperStart >= 0 && rollbackMainHelperStart > rollbackProcessHelperStart
+      ? rollbackRun.slice(rollbackProcessHelperStart, rollbackMainHelperStart)
+      : '';
+  const rollbackMainHelper =
+    rollbackMainHelperStart >= 0 && rollbackTerminateHelperStart > rollbackMainHelperStart
+      ? rollbackRun.slice(rollbackMainHelperStart, rollbackTerminateHelperStart)
+      : '';
+  if (
+    installSteps.length !== 1 ||
+    mutationMarkerIndex < 0 ||
+    fallbackInstallIndex < 0 ||
+    mutationMarkerIndex > fallbackInstallIndex ||
+    rollbackSteps.length !== 1 ||
+    rollbackIfValues.length !== 1 ||
+    rollbackIfValues[0] !== "${{ always() && steps.install_apps.outputs.mutation_started == 'true' }}" ||
+    !rollbackSteps[0].includes('INSTALL_STEP_OUTCOME: ${{ steps.install_apps.outcome }}') ||
+    !rollbackSteps[0].includes('[ "$INSTALL_STEP_OUTCOME" != "success" ]') ||
+    !installRun.includes('FALLBACK_EXPECTED_BUNDLE_ID=$(/usr/libexec/PlistBuddy') ||
+    !installRun.includes('FALLBACK_EXPECTED_EXECUTABLE=$(/usr/libexec/PlistBuddy') ||
+    !rollbackRun.includes('terminate_exact_app_processes "$BETA_APP"') ||
+    !rollbackRun.includes('terminate_exact_app_processes "$FALLBACK_APP"') ||
+    !rollbackRun.includes('/bin/ps -ww -axo pid=,comm=') ||
+    !rollbackProcessHelper.includes('if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then') ||
+    !rollbackProcessHelper.includes('if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'') ||
+    rollbackProcessHelper.split('return 1').length - 1 < 2 ||
+    !rollbackMainHelper.includes('if ! /bin/ps -ww -axo pid=,comm= > "$process_snapshot"; then') ||
+    !rollbackMainHelper.includes(
+      'if node - "$process_snapshot" "$app_path" "$executable_name" "$pid_output" <<\'NODE\''
+    ) ||
+    rollbackMainHelper.split('return 1').length - 1 < 2 ||
+    !rollbackRun.includes('kill -9 "$process_id"') ||
+    !rollbackRun.includes('write_exact_app_main_pids \\') ||
+    !rollbackRun.includes('ACTUAL_FALLBACK_BUNDLE_ID=$(/usr/libexec/PlistBuddy') ||
+    !rollbackRun.includes('RC_WORKBENCH_CLEANUP_SUCCEEDED=true') ||
+    fallbackDwellIndex < 0 ||
+    fallbackVerifiedIndex < fallbackDwellIndex ||
+    !rollbackRun.includes('/usr/bin/grep -Fx "$FALLBACK_LAUNCH_PID" "$FALLBACK_MAIN_PIDS"') ||
+    rollbackRun.includes('pkill -f') ||
+    rollbackRun.includes('pgrep -f')
+  ) {
+    issues.push('.github/workflows/evaos-beta-rc-canary.yml: rollback must run after every post-install outcome');
+  }
+  const failureWriterSteps = getWorkflowNamedStepBlocks(workflow, 'Write sanitized RC failure packet');
+  const failureUploadSteps = getWorkflowNamedStepBlocks(workflow, 'Upload sanitized RC failure packet');
+  const expectedFailureIf = "${{ failure() && steps.prepare_proof.outcome == 'success' }}";
+  const failureWriterIfValues =
+    failureWriterSteps.length === 1 ? getWorkflowStepScalarValues(failureWriterSteps[0], 'if') : [];
+  const failureUploadIfValues =
+    failureUploadSteps.length === 1 ? getWorkflowStepScalarValues(failureUploadSteps[0], 'if') : [];
+  const failureWriter = failureWriterSteps.length === 1 ? failureWriterSteps[0] : '';
+  const failureWriterRun = getWorkflowStepPropertyBlock(failureWriter, 'run', true).replace(/\r\n/g, '\n');
+  const failureWriterPropertyNames = getWorkflowStepPropertyNames(failureWriter).sort();
+  const expectedFailureWriterPropertyNames = ['env', 'if', 'name', 'run'].sort();
+  const expectedFailureWriterEnvKeys = ['INSTALL_MUTATION_STARTED', 'ROLLBACK_STEP_OUTCOME'].sort();
+  const failureWriterEnvKeys = getWorkflowStepEnvKeys(failureWriter).sort();
+  const exactFailureWriterContract =
+    JSON.stringify(failureWriterPropertyNames) === JSON.stringify(expectedFailureWriterPropertyNames) &&
+    JSON.stringify(failureWriterEnvKeys) === JSON.stringify(expectedFailureWriterEnvKeys) &&
+    getWorkflowStepEnvValues(failureWriter, 'INSTALL_MUTATION_STARTED').join('') ===
+      '${{ steps.install_apps.outputs.mutation_started }}' &&
+    getWorkflowStepEnvValues(failureWriter, 'ROLLBACK_STEP_OUTCOME').join('') ===
+      '${{ steps.rollback_candidate.outcome }}' &&
+    createHash('sha256').update(failureWriterRun).digest('hex') === RC_FAILURE_WRITER_RUN_SHA256;
+  const unsafeFailureWriter =
+    /\b(?:cp|mv|ditto|rsync|tar|zip|cat|tee|readFile|readFileSync|copyFile|copyFileSync|createReadStream|appendFile|appendFileSync)\b/.test(
+      failureWriter
+    ) ||
+    /\$(?:PROOF_DIR|RUNNER_TEMP)|stdout|stderr|connector\.token|\/Applications\//i.test(failureWriter) ||
+    /process\.env\.(?:FALLBACK_APP|FALLBACK_BUNDLE_ID|FALLBACK_EXECUTABLE|FALLBACK_LAUNCH_PID)/.test(failureWriter);
+  if (
+    failureWriterSteps.length !== 1 ||
+    failureUploadSteps.length !== 1 ||
+    failureWriterIfValues.length !== 1 ||
+    failureWriterIfValues[0] !== expectedFailureIf ||
+    failureUploadIfValues.length !== 1 ||
+    failureUploadIfValues[0] !== expectedFailureIf ||
+    !failureWriter.includes("schema: 'evaos-beta-rc-sanitized-failure/v1'") ||
+    !failureWriter.includes("workbenchCleanupSucceeded: strictBoolean('RC_WORKBENCH_CLEANUP_SUCCEEDED')") ||
+    !failureWriter.includes("fallbackLaunchVerified: strictBoolean('RC_FALLBACK_LAUNCH_VERIFIED')") ||
+    !exactFailureWriterContract ||
+    unsafeFailureWriter ||
+    !failureUploadSteps[0].includes('path: rc-failure-proof') ||
+    failureUploadSteps[0].includes('path: rc-proof')
+  ) {
+    issues.push(
+      '.github/workflows/evaos-beta-rc-canary.yml: failures must upload only the allowlisted sanitized RC failure packet'
+    );
   }
   return issues;
 }
@@ -3770,6 +3997,52 @@ function assertRcInstalledCandidatePreCanaryProof(proofPath, tag, releaseManifes
   }
 }
 
+function assertRcInstalledCandidateConnectorStartProof(proofPath) {
+  const proof = readManifestFile(proofPath);
+  const expectedTopLevelKeys = [
+    'attempts',
+    'classification',
+    'health',
+    'mode',
+    'ok',
+    'processExitCode',
+    'processRunning',
+    'schema',
+    'startInvoked',
+    'token',
+  ];
+  const expectedTokenKeys = ['atomicRead', 'exists', 'mode0600', 'nonempty', 'ownerMatchesRunner', 'regularFile'];
+  const expectedHealthKeys = ['reachable'];
+  if (
+    JSON.stringify(Object.keys(proof).sort()) !== JSON.stringify(expectedTopLevelKeys) ||
+    !proof.token ||
+    typeof proof.token !== 'object' ||
+    JSON.stringify(Object.keys(proof.token).sort()) !== JSON.stringify(expectedTokenKeys) ||
+    !proof.health ||
+    typeof proof.health !== 'object' ||
+    JSON.stringify(Object.keys(proof.health).sort()) !== JSON.stringify(expectedHealthKeys) ||
+    proof.schema !== 'evaos-installed-connector-harness-start/v1' ||
+    proof.ok !== true ||
+    proof.classification !== 'ready' ||
+    proof.mode !== 'harness-owned-loopback' ||
+    proof.startInvoked !== true ||
+    proof.processRunning !== true ||
+    proof.processExitCode !== null ||
+    !Number.isInteger(proof.attempts) ||
+    proof.attempts < 1 ||
+    proof.attempts > 100 ||
+    proof.token.atomicRead !== true ||
+    proof.token.exists !== true ||
+    proof.token.regularFile !== true ||
+    proof.token.ownerMatchesRunner !== true ||
+    proof.token.mode0600 !== true ||
+    proof.token.nonempty !== true ||
+    proof.health.reachable !== true
+  ) {
+    throw new Error('Installed candidate connector start proof must be the strict successful harness summary.');
+  }
+}
+
 function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifest) {
   const proof = readManifestFile(proofPath);
   const expectedVersion = versionFromPublicBetaTag(tag);
@@ -3955,6 +4228,8 @@ function verifyRcProof(proofDir, tag, env = process.env) {
       assertRcUpdaterZipTrustProof(filePath, tag, trustedManifest, resolvedReleaseAssetsDir, releaseAssetBytesDir);
     } else if (required.id === 'installed-candidate-pre-canary') {
       assertRcInstalledCandidatePreCanaryProof(filePath, tag, trustedManifest);
+    } else if (required.id === 'installed-candidate-connector-start') {
+      assertRcInstalledCandidateConnectorStartProof(filePath);
     } else if (required.id === 'installed-candidate-connector') {
       assertRcInstalledCandidateConnectorProof(filePath, tag, trustedManifest);
     }

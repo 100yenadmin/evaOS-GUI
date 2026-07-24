@@ -266,6 +266,45 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
+  it('keeps the installed QA child on the same isolated connector state directory', () => {
+    const sourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+    const script = [
+      'import os',
+      'from pathlib import Path',
+      'from tempfile import TemporaryDirectory',
+      'from types import SimpleNamespace',
+      'from evaos_desktop_bridge import qa_canary',
+      'with TemporaryDirectory() as root:',
+      '    launcher = Path(root) / "evaos-desktop-bridge"',
+      '    launcher.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")',
+      '    launcher.chmod(0o755)',
+      '    launcher = launcher.resolve()',
+      '    qa_canary.INSTALLED_WORKBENCH_BRIDGE_CLI = launcher',
+      '    captured = {}',
+      '    def fake_run(argv, **kwargs):',
+      '        captured["argv"] = argv',
+      '        captured["env"] = kwargs["env"]',
+      '        return SimpleNamespace(returncode=0, stdout="{}\\n")',
+      '    qa_canary.subprocess.run = fake_run',
+      '    state_dir = str(Path(root) / "isolated-state")',
+      '    os.environ["EVAOS_DESKTOP_BRIDGE_STATE_DIR"] = state_dir',
+      '    os.environ["EVAOS_UNRELATED_SECRET"] = "must-not-propagate"',
+      '    exit_code, output = qa_canary._run_local_workbench_cli(launcher, ["status", "--json"], 5)',
+      '    assert exit_code == 0 and output == "{}\\n"',
+      '    assert captured["argv"] == [str(launcher), "status", "--json"]',
+      '    assert captured["env"]["EVAOS_DESKTOP_BRIDGE_STATE_DIR"] == state_dir',
+      '    assert "EVAOS_UNRELATED_SECRET" not in captured["env"]',
+      'print("ok")',
+    ].join('\n');
+
+    expect(
+      execFileSync('python3', ['-B', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: sourceDir },
+      }).trim()
+    ).toBe('ok');
+  });
+
   it('captures pre-canary failures as sanitized check summaries before preserving the exit code', () => {
     const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'evaos-beta-rc-canary.yml'), 'utf8');
     const sanitizerCommand = 'node - "$PRE_CANARY_REPORT" <<\'NODE\'';
@@ -279,7 +318,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       .join('\n');
     const failureBlock = workflow.slice(
       workflow.indexOf('PRE_CANARY_EXIT=$?'),
-      workflow.indexOf('TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"')
+      workflow.indexOf('write_connector_start_summary() {')
     );
 
     expect(failureBlock).toContain('PRE_CANARY_EXIT=$?');
@@ -340,6 +379,418 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(malformed.stdout).toBe('');
     } finally {
       rmSync(reportDir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts the installed connector in an isolated loopback harness before token proof and sanitizes failures', () => {
+    const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'evaos-beta-rc-canary.yml'), 'utf8');
+    const trapIndex = workflow.indexOf("trap 'cleanup_candidate_processes $?' EXIT");
+    const serveIndex = workflow.indexOf('"$BRIDGE_COMMAND" serve \\');
+    const deadlineIndex = workflow.indexOf('CONNECTOR_DEADLINE=$((SECONDS + 45))');
+    const tokenReadIndex = workflow.indexOf('CONNECTOR_TOKEN=$(read_connector_token_atomically 2>/dev/null)');
+    const qaIndex = workflow.indexOf('"$BRIDGE_COMMAND" qa-canary \\');
+
+    expect(trapIndex).toBeGreaterThan(-1);
+    expect(trapIndex).toBeLessThan(serveIndex);
+    expect(serveIndex).toBeLessThan(deadlineIndex);
+    expect(deadlineIndex).toBeLessThan(tokenReadIndex);
+    expect(tokenReadIndex).toBeLessThan(qaIndex);
+    expect(workflow).toContain('TOKEN_FILE="$CONNECTOR_STATE_DIR/connector.token"');
+    expect(workflow).toContain('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\');
+    expect(workflow).toContain('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\');
+    expect(workflow).toContain('CONNECTOR_PID=$!');
+    expect(workflow).toContain('kill "$CONNECTOR_PID" >/dev/null 2>&1 || true');
+    expect(workflow).toContain('stat -f \'%Lp\' "$TOKEN_FILE"');
+    expect(workflow).toContain('const noFollow = fs.constants.O_NOFOLLOW;');
+    expect(workflow).toContain('const before = fs.fstatSync(descriptor);');
+    expect(workflow).toContain('const buffer = Buffer.alloc(130);');
+    expect(workflow).toContain('const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);');
+    expect(workflow).not.toContain("fs.readFileSync(descriptor, 'utf8')");
+    expect(workflow).toContain("if: ${{ always() && steps.install_apps.outputs.mutation_started == 'true' }}");
+    expect(workflow).toContain('terminate_exact_app_processes "$BETA_APP"');
+    expect(workflow).toContain('RC_FALLBACK_LAUNCH_VERIFIED=true');
+    expect(workflow).not.toContain('pkill -f "EvaOSWorkbench|evaOS Workbench"');
+    expect(workflow).not.toContain('pgrep -f "EvaOSWorkbench|evaOS Workbench"');
+    expect(workflow).not.toContain('pgrep -f "${FALLBACK_APP_NAME%.app}"');
+    expect(workflow).toContain('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"');
+    expect(workflow).not.toContain('connector-service start');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stdout');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stderr');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-connector.stdout');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-connector.stderr');
+
+    const processScriptMarker = 'node - "$WORKBENCH_PROCESS_SNAPSHOT" <<\'NODE\'';
+    const processScriptStart = workflow.indexOf(processScriptMarker);
+    const processBodyStart = workflow.indexOf('\n', processScriptStart) + 1;
+    const processBodyEnd = workflow.indexOf('\n          NODE', processBodyStart);
+    const processScript = workflow
+      .slice(processBodyStart, processBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(processScriptStart).toBeGreaterThan(-1);
+    expect(processBodyEnd).toBeGreaterThan(processBodyStart);
+
+    const processDir = mkdtempSync(join(tmpdir(), 'evaos-rc-process-audit-'));
+    try {
+      const snapshotPath = join(processDir, 'processes.txt');
+      writeFileSync(snapshotPath, '  101 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n');
+      const canonical = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(canonical.status).toBe(0);
+
+      writeFileSync(
+        snapshotPath,
+        '  102 /Applications/evaOS Workbench.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper\n'
+      );
+      const helperOnly = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(helperOnly.status).toBe(4);
+
+      writeFileSync(snapshotPath, '');
+      const empty = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(empty.status).toBe(4);
+
+      writeFileSync(snapshotPath, '  202 /Volumes/LEXAR/Codex/evidence/stale.app/Contents/MacOS/evaOS Workbench\n');
+      const stale = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(stale.status).toBe(2);
+      expect(stale.stdout).toBe('');
+      expect(stale.stderr).toBe('');
+
+      writeFileSync(
+        snapshotPath,
+        `  203 /Volumes/${'very-long-segment/'.repeat(40)}stale.app/Contents/MacOS/evaOS Workbench\n`
+      );
+      const longStale = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(longStale.status).toBe(2);
+    } finally {
+      rmSync(processDir, { recursive: true, force: true });
+    }
+
+    const exactProcessScriptMarker = 'node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'';
+    const exactProcessScriptStart = workflow.indexOf(exactProcessScriptMarker);
+    const exactProcessBodyStart = workflow.indexOf('\n', exactProcessScriptStart) + 1;
+    const exactProcessBodyEnd = workflow.indexOf('\n          NODE', exactProcessBodyStart);
+    const exactProcessScript = workflow
+      .slice(exactProcessBodyStart, exactProcessBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(exactProcessScriptStart).toBeGreaterThan(-1);
+    expect(exactProcessBodyEnd).toBeGreaterThan(exactProcessBodyStart);
+
+    const exactProcessHelperStart = workflow.indexOf('          write_exact_app_process_pids() {');
+    const exactProcessHelperEnd = workflow.indexOf(
+      '\n          terminate_exact_app_processes() {',
+      exactProcessHelperStart
+    );
+    const exactProcessHelper = workflow
+      .slice(exactProcessHelperStart, exactProcessHelperEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(exactProcessHelperStart).toBeGreaterThan(-1);
+    expect(exactProcessHelperEnd).toBeGreaterThan(exactProcessHelperStart);
+
+    const exactProcessDir = mkdtempSync(join(tmpdir(), 'evaos-rc-exact-processes-'));
+    try {
+      const snapshotPath = join(exactProcessDir, 'processes.txt');
+      const outputPath = join(exactProcessDir, 'pids.txt');
+      writeFileSync(
+        snapshotPath,
+        [
+          '  301 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+          '  302 /Applications/evaOS Workbench.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper',
+          '  303 /Applications/evaOS Workbench.app.old/Contents/MacOS/evaOS Workbench',
+          '  304 /Applications/Other Workbench.app/Contents/MacOS/evaOS Workbench',
+          '  305 /bin/bash /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+        ].join('\n') + '\n'
+      );
+      const filtered = spawnSync(
+        process.execPath,
+        ['-', snapshotPath, '/Applications/evaOS Workbench.app', outputPath],
+        { encoding: 'utf8', input: exactProcessScript }
+      );
+      expect(filtered.status).toBe(0);
+      expect(filtered.stdout).toBe('');
+      expect(filtered.stderr).toBe('');
+      expect(readFileSync(outputPath, 'utf8')).toBe('301\n302\n');
+
+      const parserFailure = spawnSync(
+        '/bin/bash',
+        [
+          '-c',
+          `${exactProcessHelper}\nwrite_exact_app_process_pids "$1" "$2" "$3"`,
+          'evaos-helper-probe',
+          '/Applications/evaOS Workbench.app',
+          join(exactProcessDir, 'failure.snapshot'),
+          join(exactProcessDir, 'missing-parent', 'pids.txt'),
+        ],
+        { encoding: 'utf8' }
+      );
+      expect(parserFailure.status).not.toBe(0);
+    } finally {
+      rmSync(exactProcessDir, { recursive: true, force: true });
+    }
+
+    const rollbackStepStart = workflow.indexOf('- name: Roll back beta and verify fallback');
+    const exactMainScriptMarker = 'node - "$process_snapshot" "$app_path" "$executable_name" "$pid_output" <<\'NODE\'';
+    const exactMainScriptStart = workflow.indexOf(exactMainScriptMarker, rollbackStepStart);
+    const exactMainBodyStart = workflow.indexOf('\n', exactMainScriptStart) + 1;
+    const exactMainBodyEnd = workflow.indexOf('\n          NODE', exactMainBodyStart);
+    const exactMainScript = workflow
+      .slice(exactMainBodyStart, exactMainBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(exactMainScriptStart).toBeGreaterThan(rollbackStepStart);
+    expect(exactMainBodyEnd).toBeGreaterThan(exactMainBodyStart);
+
+    const exactMainDir = mkdtempSync(join(tmpdir(), 'evaos-rc-exact-main-'));
+    try {
+      const snapshotPath = join(exactMainDir, 'processes.txt');
+      const outputPath = join(exactMainDir, 'pids.txt');
+      writeFileSync(
+        snapshotPath,
+        [
+          '  401 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+          '  402 /Applications/evaOS Workbench.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper',
+          '  403 /Applications/Other Workbench.app/Contents/MacOS/evaOS Workbench',
+        ].join('\n') + '\n'
+      );
+      const filtered = spawnSync(
+        process.execPath,
+        ['-', snapshotPath, '/Applications/evaOS Workbench.app', 'evaOS Workbench', outputPath],
+        { encoding: 'utf8', input: exactMainScript }
+      );
+      expect(filtered.status).toBe(0);
+      expect(filtered.stdout).toBe('');
+      expect(filtered.stderr).toBe('');
+      expect(readFileSync(outputPath, 'utf8')).toBe('401\n');
+    } finally {
+      rmSync(exactMainDir, { recursive: true, force: true });
+    }
+
+    const dwellStart = workflow.indexOf('          FALLBACK_LAUNCH_PID=""');
+    const dwellMarker = '          echo "RC_FALLBACK_LAUNCH_VERIFIED=true" >> "$GITHUB_ENV"';
+    const dwellEnd = workflow.indexOf('\n', workflow.indexOf(dwellMarker, dwellStart)) + 1;
+    const dwellScript = workflow
+      .slice(dwellStart, dwellEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n')
+      .replaceAll('sleep 1', ':');
+    expect(dwellStart).toBeGreaterThan(rollbackStepStart);
+    expect(dwellEnd).toBeGreaterThan(dwellStart);
+
+    const dwellDir = mkdtempSync(join(tmpdir(), 'evaos-rc-fallback-dwell-'));
+    try {
+      const pidPath = join(dwellDir, 'main.pids');
+      const snapshotPath = join(dwellDir, 'main.snapshot');
+      const githubEnvPath = join(dwellDir, 'github.env');
+      const runDwell = (transient: boolean) => {
+        writeFileSync(pidPath, '501\n');
+        writeFileSync(githubEnvPath, '');
+        return spawnSync(
+          '/bin/bash',
+          [
+            '-c',
+            `set -euo pipefail
+write_exact_app_main_pids() {
+  if [ "$TRANSIENT_PROCESS" = "true" ]; then
+    : > "$4"
+  else
+    printf '501\\n' > "$4"
+  fi
+}
+${dwellScript}`,
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              TRANSIENT_PROCESS: transient ? 'true' : 'false',
+              FALLBACK_MAIN_PIDS: pidPath,
+              FALLBACK_MAIN_SNAPSHOT: snapshotPath,
+              FALLBACK_APP: '/Applications/evaOS Workbench.app',
+              ACTUAL_FALLBACK_EXECUTABLE: 'evaOS Workbench',
+              GITHUB_ENV: githubEnvPath,
+            },
+          }
+        );
+      };
+
+      const stable = runDwell(false);
+      expect(stable.status).toBe(0);
+      expect(readFileSync(githubEnvPath, 'utf8')).toContain('RC_FALLBACK_LAUNCH_VERIFIED=true');
+
+      const transient = runDwell(true);
+      expect(transient.status).not.toBe(0);
+      expect(readFileSync(githubEnvPath, 'utf8')).not.toContain('RC_FALLBACK_LAUNCH_VERIFIED=true');
+    } finally {
+      rmSync(dwellDir, { recursive: true, force: true });
+    }
+
+    const atomicFunctionStart = workflow.indexOf('read_connector_token_atomically() {');
+    const atomicScriptMarker = 'node - "$TOKEN_FILE" <<\'NODE\'';
+    const atomicScriptStart = workflow.indexOf(atomicScriptMarker, atomicFunctionStart);
+    const atomicBodyStart = workflow.indexOf('\n', atomicScriptStart) + 1;
+    const atomicBodyEnd = workflow.indexOf('\n          NODE', atomicBodyStart);
+    const atomicScript = workflow
+      .slice(atomicBodyStart, atomicBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(atomicFunctionStart).toBeGreaterThan(-1);
+    expect(atomicScriptStart).toBeGreaterThan(atomicFunctionStart);
+    expect(atomicBodyEnd).toBeGreaterThan(atomicBodyStart);
+
+    const tokenDir = mkdtempSync(join(tmpdir(), 'evaos-rc-token-reader-'));
+    try {
+      const tokenPath = join(tokenDir, 'connector.token');
+      const symlinkPath = join(tokenDir, 'connector-link.token');
+      const token = 'a'.repeat(64);
+      writeFileSync(tokenPath, `${token}\n`);
+      chmodSync(tokenPath, 0o600);
+      const valid = spawnSync(process.execPath, ['-', tokenPath], {
+        encoding: 'utf8',
+        input: atomicScript,
+      });
+      expect(valid.status).toBe(0);
+      expect(valid.stdout).toBe(token);
+      expect(valid.stderr).toBe('');
+
+      symlinkSync(tokenPath, symlinkPath);
+      const symlinked = spawnSync(process.execPath, ['-', symlinkPath], {
+        encoding: 'utf8',
+        input: atomicScript,
+      });
+      expect(symlinked.status).toBe(2);
+      expect(symlinked.stdout).toBe('');
+
+      chmodSync(tokenPath, 0o644);
+      const broadMode = spawnSync(process.execPath, ['-', tokenPath], {
+        encoding: 'utf8',
+        input: atomicScript,
+      });
+      expect(broadMode.status).toBe(2);
+      expect(broadMode.stdout).toBe('');
+
+      chmodSync(tokenPath, 0o600);
+      writeFileSync(tokenPath, 'b'.repeat(130));
+      const oversized = spawnSync(process.execPath, ['-', tokenPath], {
+        encoding: 'utf8',
+        input: atomicScript,
+      });
+      expect(oversized.status).toBe(2);
+      expect(oversized.stdout).toBe('');
+
+      const growthScript = atomicScript.replace(
+        "const fs = require('fs');",
+        `const realFs = require('fs');
+const fs = {
+  constants: realFs.constants,
+  openSync: () => 42,
+  fstatSync: () => ({
+    isFile: () => true,
+    uid: process.getuid(),
+    mode: 0o100600,
+    size: 64,
+    dev: 1,
+    ino: 1,
+    mtimeMs: 1,
+  }),
+  readSync: (_descriptor, buffer, _offset, length) => {
+    if (length !== 130) process.exit(9);
+    buffer.fill(0x61);
+    return 130;
+  },
+  closeSync: () => {},
+};`
+      );
+      expect(growthScript).not.toBe(atomicScript);
+      const growing = spawnSync(process.execPath, ['-', tokenPath], {
+        encoding: 'utf8',
+        input: growthScript,
+      });
+      expect(growing.status).toBe(2);
+      expect(growing.stdout).toBe('');
+      expect(growing.stderr).toBe('');
+    } finally {
+      rmSync(tokenDir, { recursive: true, force: true });
+    }
+
+    const failureScriptMarker = "node - rc-failure-proof/failure-summary.json <<'NODE'";
+    const failureScriptStart = workflow.indexOf(failureScriptMarker);
+    const failureBodyStart = workflow.indexOf('\n', failureScriptStart) + 1;
+    const failureBodyEnd = workflow.indexOf('\n          NODE', failureBodyStart);
+    const failureScript = workflow
+      .slice(failureBodyStart, failureBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    expect(failureScriptStart).toBeGreaterThan(-1);
+    expect(failureBodyEnd).toBeGreaterThan(failureBodyStart);
+
+    const failureDir = mkdtempSync(join(tmpdir(), 'evaos-rc-failure-sanitizer-'));
+    try {
+      const outputPath = join(failureDir, 'failure-summary.json');
+      const hostile =
+        'Bearer fixture-secret https://secret.example 2001:db8::1 /Users/private/connector.token pid=4242';
+      const result = spawnSync(process.execPath, ['-', outputPath], {
+        encoding: 'utf8',
+        input: failureScript,
+        env: {
+          ...process.env,
+          RC_PHASE: hostile,
+          RC_CONNECTOR_READINESS_CLASSIFICATION: hostile,
+          RC_CONNECTOR_START_INVOKED: 'true',
+          RC_CONNECTOR_PROCESS_RUNNING: 'false',
+          RC_CONNECTOR_PROCESS_EXIT_CODE: '2',
+          RC_CONNECTOR_ATTEMPTS: '4',
+          RC_CONNECTOR_TOKEN_EXISTS: 'true',
+          RC_CONNECTOR_TOKEN_REGULAR: 'true',
+          RC_CONNECTOR_TOKEN_OWNER_MATCH: 'true',
+          RC_CONNECTOR_TOKEN_MODE_600: 'true',
+          RC_CONNECTOR_TOKEN_NONEMPTY: 'true',
+          RC_CONNECTOR_HEALTH_REACHABLE: 'false',
+          RC_QA_STARTED: 'false',
+          RC_QA_SUCCEEDED: 'false',
+          RC_CONNECTOR_CLEANUP_ATTEMPTED: 'true',
+          RC_CONNECTOR_CLEANUP_SUCCEEDED: 'true',
+          RC_WORKBENCH_CLEANUP_ATTEMPTED: 'true',
+          RC_WORKBENCH_CLEANUP_SUCCEEDED: 'true',
+          RC_FALLBACK_LAUNCH_VERIFIED: 'true',
+          RC_ROLLBACK_ATTEMPTED: 'true',
+          RC_ROLLBACK_SUCCEEDED: 'true',
+          INSTALL_MUTATION_STARTED: 'true',
+          ROLLBACK_STEP_OUTCOME: 'success',
+        },
+      });
+      expect(result.status).toBe(0);
+      const summary = readFileSync(outputPath, 'utf8');
+      expect(summary).toContain('"phase": "unknown"');
+      expect(summary).toContain('"readiness": "unknown"');
+      expect(summary).toContain('"workbenchCleanupSucceeded": true');
+      expect(summary).toContain('"fallbackLaunchVerified": true');
+      expect(summary).not.toMatch(
+        /fixture-secret|secret\.example|2001:db8::1|\/Users\/private|connector\.token|pid=4242/
+      );
+    } finally {
+      rmSync(failureDir, { recursive: true, force: true });
     }
   });
 
